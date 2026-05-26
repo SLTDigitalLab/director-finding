@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+frontend/build/
+*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/venv/
+backend/.venv/
+venv/
+.venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Environment & secrets (never commit API keys)
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.local
+
+# Runtime / uploads
+backend/uploads/
+uploads/
+*.log
+logs/
+
+# OS & editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Docker (local overrides only)
+docker-compose.override.yml

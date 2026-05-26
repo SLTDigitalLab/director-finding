@@ -1,0 +1,120 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-cream font-body text-ink antialiased;
+  }
+  * {
+    @apply border-ink-200;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center bg-ink text-cream px-6 py-2.5 font-body font-medium text-sm tracking-wide
+      shadow-panel transition-all duration-200 hover:bg-ink-700 hover:shadow-soft
+      active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-panel
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-cream;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center border border-ink-300 bg-white/80 text-ink-600 px-5 py-2 font-body font-medium text-sm
+      tracking-wide transition-all duration-200 hover:border-ink hover:bg-white hover:text-ink
+      active:scale-[0.98]
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-cream;
+  }
+  .btn-icon {
+    @apply inline-flex items-center justify-center rounded-sm p-2 text-ink-400 transition-colors duration-200
+      hover:bg-ink-50 hover:text-ink-600
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/50;
+  }
+  .card {
+    @apply bg-white border border-ink-100/80 shadow-panel;
+  }
+  .card-elevated {
+    @apply bg-white border border-ink-100/80 shadow-soft;
+  }
+  .section-title {
+    @apply font-display text-2xl font-semibold text-ink tracking-tight;
+  }
+  .label {
+    @apply text-xs font-mono font-medium text-ink-400 uppercase tracking-widest;
+  }
+  .tag {
+    @apply inline-flex items-center px-2.5 py-0.5 text-xs font-mono font-medium
+      bg-parchment text-ink-600 border border-ink-100/90;
+  }
+  .input-field {
+    @apply w-full border border-ink-200 bg-white px-4 py-2.5 text-sm font-body text-ink
+      placeholder:text-ink-300 shadow-[inset_0_1px_2px_rgba(15,17,23,0.04)]
+      transition-all duration-200
+      focus:border-ink-400 focus:outline-none focus:ring-2 focus:ring-gold/25 focus:ring-offset-0;
+  }
+  .table-shell {
+    @apply overflow-hidden border border-ink-100/90 bg-white shadow-panel;
+  }
+  .badge-pill-pdf {
+    @apply inline-flex items-center gap-1 rounded-full border border-gold/40 bg-gold/10 px-2.5 py-0.5 text-[10px] font-mono font-semibold uppercase tracking-wider text-ink-700;
+  }
+  .badge-pill-registry {
+    @apply inline-flex items-center gap-1 rounded-full border border-ink-200 bg-ink-50 px-2.5 py-0.5 text-[10px] font-mono font-semibold uppercase tracking-wider text-ink-600;
+  }
+  .empty-panel {
+    @apply flex flex-col items-center justify-center rounded-sm border border-dashed border-ink-200 bg-white/60 px-8 py-16 text-center;
+  }
+}
+
+/* Subtle animated underline for nav items */
+.nav-link {
+  position: relative;
+}
+.nav-link::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: #C9A84C;
+  transition: width 0.3s ease;
+}
+.nav-link.active::after,
+.nav-link:hover::after {
+  width: 100%;
+}
+
+.drop-zone-active {
+  @apply border-gold bg-gradient-to-b from-gold/10 to-gold/5 shadow-[inset_0_0_0_1px_rgba(201,168,76,0.25)];
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #ede9df;
+}
+::-webkit-scrollbar-thumb {
+  background: #9ca2b0;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6b7384;
+}
