@@ -10,8 +10,36 @@ import {
   FileSearch,
   Sparkles,
   LayoutPanelLeft,
+  ShieldAlert,
 } from 'lucide-react'
 import { extractPdf, saveExtraction } from '../api/client'
+
+function BlacklistBanner({ directorCount, companyBlacklisted, companyReason }) {
+  if (!directorCount && !companyBlacklisted) return null
+  return (
+    <div
+      className="flex items-start gap-3 rounded-sm border border-danger/30 bg-danger-muted px-4 py-3 text-danger"
+      role="alert"
+    >
+      <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+      <div className="text-sm leading-relaxed font-body space-y-1">
+        {directorCount > 0 && (
+          <p>
+            <strong>{directorCount}</strong> director{directorCount !== 1 ? 's' : ''} on this form match the supervisor
+            blacklist (by NIC/passport).
+          </p>
+        )}
+        {companyBlacklisted && (
+          <p>
+            <strong>This company is blacklisted.</strong>
+            {companyReason ? ` ${companyReason}` : ''}
+          </p>
+        )}
+        <p className="text-xs opacity-90">Review before saving.</p>
+      </div>
+    </div>
+  )
+}
 
 function StepDot({ done, active, label }) {
   return (
@@ -102,6 +130,7 @@ export default function UploadZone({ onSuccess }) {
   }
 
   const preview = extractResponse?.preview
+  const blacklistedCount = preview?.directors?.filter((d) => d.is_blacklisted).length ?? 0
 
   const hasFile = Boolean(file)
   const hasPreview = Boolean(preview && !saveResult)
@@ -253,7 +282,14 @@ export default function UploadZone({ onSuccess }) {
                         <div className="flex h-7 w-7 items-center justify-center bg-ink font-mono text-xs text-cream">
                           {d.full_name[0]}
                         </div>
-                        <span className="font-body text-sm font-medium text-ink">{d.full_name}</span>
+                        <div>
+                          {d.nic_passport ? (
+                            <span className="block font-mono text-xs text-ink-500">{d.nic_passport}</span>
+                          ) : (
+                            <span className="block font-mono text-xs text-ink-400 italic">No ID on file</span>
+                          )}
+                          <span className="font-body text-sm font-medium text-ink">{d.full_name}</span>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -264,21 +300,42 @@ export default function UploadZone({ onSuccess }) {
               </div>
             ) : preview && !saveResult ? (
               <div className="space-y-5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={`tag text-[10px] ${
-                      preview.company_exists_in_registry ? 'border-gold/50 bg-gold/10' : ''
-                    }`}
-                  >
-                    {preview.company_exists_in_registry ? 'Already in registry' : 'New company'}
-                  </span>
-                  <p className="text-xs leading-snug text-ink-500 font-body">{preview.message}</p>
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`tag text-[10px] ${
+                        preview.company_exists_in_registry ? 'border-gold/50 bg-gold/10' : ''
+                      }`}
+                    >
+                      {preview.company_exists_in_registry ? 'Already in registry' : 'New company'}
+                    </span>
+                    <p className="text-xs leading-snug text-ink-500 font-body">{preview.message}</p>
+                  </div>
+                  <BlacklistBanner
+                    directorCount={blacklistedCount}
+                    companyBlacklisted={preview.company_is_blacklisted}
+                    companyReason={preview.company_blacklist_reason}
+                  />
                 </div>
 
-                <div>
-                  <p className="font-display text-base font-semibold leading-snug text-ink sm:text-lg">
-                    {preview.company_name}
-                  </p>
+                <div
+                  className={
+                    preview.company_is_blacklisted
+                      ? 'rounded-sm border border-danger/30 bg-danger-muted/40 px-3 py-2'
+                      : ''
+                  }
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-display text-base font-semibold leading-snug text-ink sm:text-lg">
+                      {preview.company_name}
+                    </p>
+                    {preview.company_is_blacklisted && (
+                      <span className="inline-flex items-center gap-1 rounded-sm border border-danger/40 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-danger">
+                        <ShieldAlert className="h-3 w-3" />
+                        Blacklisted company
+                      </span>
+                    )}
+                  </div>
                   {preview.company_type && (
                     <p className="mt-0.5 text-sm text-ink-500">{preview.company_type}</p>
                   )}
@@ -292,9 +349,8 @@ export default function UploadZone({ onSuccess }) {
                 <div>
                   <p className="label">Directors from this PDF</p>
                   <p className="mt-1 text-xs text-ink-400 font-body">
-                    Names and NICs as extracted. The second column is filled by <strong>looking up</strong> that person in
-                    your registry and listing every <strong>other</strong> company they are linked to (this company is left
-                    out).
+                    Directors are matched by <strong>NIC or passport</strong> when available, or by{' '}
+                    <strong>full name + email</strong> as a fallback. IDs can be added to a director's record later.
                   </p>
 
                   <div className="table-shell mt-3 overflow-x-auto">
@@ -314,7 +370,7 @@ export default function UploadZone({ onSuccess }) {
                             scope="col"
                             className="min-w-[11rem] px-3 py-2.5 text-left text-[10px] font-mono font-semibold uppercase tracking-wider text-ink-500"
                           >
-                            Director (from PDF)
+                            NIC / name (from PDF)
                           </th>
                           <th
                             scope="col"
@@ -332,13 +388,48 @@ export default function UploadZone({ onSuccess }) {
                           const others = d.other_companies ?? []
                           const knownInDb = d.id != null
                           return (
-                            <tr key={`${d.full_name}-${i}`} className="align-top">
+                            <tr
+                              key={`${d.nic_passport || d.full_name}-${i}`}
+                              className={`align-top ${d.is_blacklisted ? 'bg-danger-muted/40' : ''}`}
+                            >
                               <td className="px-3 py-3 font-mono text-xs text-ink-400">{i + 1}</td>
                               <td className="min-w-0 px-3 py-3">
-                                <p className="font-body text-sm font-semibold leading-snug text-ink">{d.full_name}</p>
-                                <p className="mt-1 font-mono text-[11px] text-ink-500">
-                                  {d.nic_passport || '—'}
+                                <p className="font-mono text-sm font-semibold text-ink-800">
+                                  {d.nic_passport || (
+                                    <span className="text-ink-400 font-normal">No ID on form</span>
+                                  )}
                                 </p>
+                                <p className="mt-1 font-body text-sm leading-snug text-ink">{d.full_name}</p>
+                                {d.missing_nic && d.matched_by === 'name_email' && (
+                                  <p className="mt-1 text-xs text-gold-dark">
+                                    Matched by name + email — no ID on this form. ID can be added later.
+                                  </p>
+                                )}
+                                {d.missing_nic && d.matched_by === 'none' && (
+                                  <p className="mt-1 text-xs text-ink-500">
+                                    No ID and no name + email match — will be saved as a new director.
+                                  </p>
+                                )}
+                                {d.name_changed && d.registry_full_name && (
+                                  <p className="mt-1 text-xs text-gold-dark">
+                                    Name on file: <span className="font-semibold">{d.registry_full_name}</span> — PDF shows
+                                    a different name (same ID).
+                                  </p>
+                                )}
+                                {d.is_blacklisted && (
+                                  <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-danger">
+                                    <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+                                    Blacklisted
+                                    {d.blacklist_company_name ? ` (${d.blacklist_company_name})` : ''}
+                                    {d.blacklist_reason ? ` — ${d.blacklist_reason}` : ''}
+                                  </p>
+                                )}
+                                {(d.id_type || d.id_country) && (
+                                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-ink-400">
+                                    {d.id_type && <span className="tag !px-2 !py-0.5">{d.id_type}</span>}
+                                    {d.id_country && <span className="tag !px-2 !py-0.5">{d.id_country}</span>}
+                                  </div>
+                                )}
                               </td>
                               <td className="min-w-0 px-3 py-3">
                                 {others.length > 0 ? (
@@ -356,7 +447,7 @@ export default function UploadZone({ onSuccess }) {
                                   <span className="text-xs text-ink-400">None — only this company in your registry.</span>
                                 ) : (
                                   <span className="text-xs text-ink-400">
-                                    No DB match yet — we need a matching NIC, name, or email to pull their other companies.
+                                    Not in your registry yet — will be created on save.
                                   </span>
                                 )}
                               </td>

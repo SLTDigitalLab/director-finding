@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Table, ForeignKey
+from sqlalchemy import Boolean, Column, Integer, String, Table, ForeignKey
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -28,7 +28,26 @@ class Director(Base):
     id = Column(Integer, primary_key=True, index=True)
     full_name = Column(String, index=True, nullable=False)
     nic_passport = Column(String, unique=True, nullable=True)
+    id_type = Column(String, nullable=True)  # NIC | PASSPORT
+    id_country = Column(String, nullable=True)
     residential_address = Column(String, nullable=True)
     email = Column(String, nullable=True)
 
+    is_blacklisted = Column(Boolean, default=False, index=True, nullable=False)
+    blacklist_company_name = Column(String, nullable=True)
+    blacklist_reason = Column(String, nullable=True)
+    blacklist_notes = Column(String, nullable=True)
+    blacklist_auto = Column(Boolean, default=False, nullable=False)
+
     companies = relationship("Company", secondary=company_director, back_populates="directors")
+
+
+class BlacklistedCompany(Base):
+    __tablename__ = "blacklisted_companies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True, nullable=False)
+    reason = Column(String, nullable=True)
+    notes = Column(String, nullable=True)
+    is_explicit = Column(Boolean, default=False, nullable=False)
+

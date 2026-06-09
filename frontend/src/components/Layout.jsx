@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Outlet, NavLink, Link } from 'react-router-dom'
-import { Building2, Users, Upload, BookOpen } from 'lucide-react'
+import { Building2, Users, Upload, BookOpen, ShieldAlert } from 'lucide-react'
 
 const NAV = [
   { path: '/', label: 'Upload PDF', icon: Upload, end: true },
   { path: '/companies', label: 'Companies', icon: Building2, end: false },
   { path: '/directors', label: 'Directors', icon: Users, end: false },
+  { path: '/blacklist', label: 'Blacklist', icon: ShieldAlert, end: false },
 ]
 
 export default function Layout() {

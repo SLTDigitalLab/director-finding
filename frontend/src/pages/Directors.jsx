@@ -12,8 +12,8 @@ export default function Directors() {
           <h2 className="section-title">Directors</h2>
           <div className="mt-3 h-0.5 w-14 bg-gold" aria-hidden />
           <p className="text-sm text-ink-500 mt-4 font-body max-w-xl leading-relaxed">
-            All directors across companies. Directors linked to multiple companies are highlighted. Use the
-            pencil icon to edit a person&apos;s details.
+            All directors in one registry. Filter by blacklist status, add people manually, or edit details
+            including blacklist status and linked company.
           </p>
         </div>
         <Link to="/" className="btn-primary shrink-0 gap-2 text-xs px-5 py-2.5 sm:text-sm">

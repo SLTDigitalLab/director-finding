@@ -1,5 +1,5 @@
 # PostgreSQL only — run backend and frontend on the host (e.g. uvicorn, npm run dev).
-# DATABASE_URL example: postgresql://postgres:password@localhost:5432/company_registry
+# DATABASE_URL example: postgresql://postgres:password@localhost:5432/director_finding
 
 services:
   db:
@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: company_registry
+      POSTGRES_DB: director_finding
     ports:
       - "5432:5432"
     volumes:
