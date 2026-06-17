@@ -18,16 +18,14 @@ A full-stack web app for Sri Lankan **Form 1** PDFs (Application for Registratio
 | Backend  | FastAPI (Python 3.12+)              |
 | Database | PostgreSQL 16                       |
 | AI       | OpenAI or Google Gemini (PDF extraction) |
-| Dev DB   | Docker Compose (PostgreSQL only)    |
+| Dev/Deploy | Docker Compose (frontend + backend + PostgreSQL) |
 
 ## Prerequisites
 
-- [Node.js 20+](https://nodejs.org/)
-- [Python 3.12+](https://www.python.org/)
-- [Docker](https://www.docker.com/) (optional, for PostgreSQL)
+- [Docker](https://www.docker.com/) + Docker Compose
 - An **OpenAI** and/or **Google Gemini** API key
 
-## Quick start
+## Quick start (Dockerized)
 
 ### 1. Clone the repository
 
@@ -36,41 +34,50 @@ git clone https://github.com/YOUR_USERNAME/company-director-app.git
 cd company-director-app
 ```
 
-### 2. Start PostgreSQL
-
-Docker Compose runs **only the database**:
+### 2. Create backend environment file
 
 ```bash
-docker compose up -d
+cp backend/.env.example backend/.env
 ```
 
-Default connection:
+Edit `backend/.env` and add your API key(s).  
+`DATABASE_URL` can stay as-is because Docker Compose overrides it internally.
 
-`postgresql://postgres:password@localhost:5432/company_registry`
-
-### 3. Backend
+### 3. Build and run all services
 
 ```bash
-cd backend
-python -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env
-# Edit .env: DATABASE_URL and at least one LLM API key
-uvicorn app.main:app --reload --port 8000
+docker compose up --build -d
 ```
 
-API docs: http://localhost:8000/docs
+### 4. Open the app
 
-### 4. Frontend
+- App: http://localhost
+- API docs: http://localhost:8000/docs
+- Health check: http://localhost:8000/api/health
 
 ```bash
-cd frontend
-npm install
-npm run dev
+docker compose logs -f
 ```
 
-App: http://localhost:5173
+Stop everything:
+
+```bash
+docker compose down
+```
+
+Reset including database data:
+
+```bash
+docker compose down -v
+```
+
+## Local development (without Docker for frontend/backend)
+
+If you prefer host-based development (hot reload for both apps), you can still run:
+
+1. `docker compose up -d db`
+2. Backend via `uvicorn app.main:app --reload --port 8000`
+3. Frontend via `npm run dev`
 
 ## Environment variables
 
@@ -86,6 +93,12 @@ Copy `backend/.env.example` to `backend/.env` and fill in values.
 | `LLM_PROVIDER`   | Optional: `openai` or `gemini` to force a provider |
 
 **Do not commit `.env` files** — they are listed in `.gitignore`.
+
+## Docker services
+
+- `frontend` (Nginx): serves React build on port `80` and proxies `/api` to backend
+- `backend` (FastAPI): runs on port `8000`
+- `db` (PostgreSQL 16): runs on port `5432` with volume `pgdata`
 
 ## Project structure
 

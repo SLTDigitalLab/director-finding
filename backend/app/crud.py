@@ -742,6 +742,21 @@ def unblacklist_director(db: Session, director_id: int) -> models.Director | Non
     director = db.query(models.Director).options(joinedload(models.Director.companies)).filter(models.Director.id == director_id).first()
     if not director:
         return None
+
+    # Guard: auto-blacklisted directors must be cleared via their company/source chain.
+    if director.blacklist_auto:
+        trigger_company = normalize_company_name(director.blacklist_company_name)
+        if trigger_company:
+            trigger_blacklisted = find_blacklisted_company_by_name(db, trigger_company) is not None
+        else:
+            trigger_blacklisted = any(
+                find_blacklisted_company_by_name(db, c.name) is not None for c in director.companies
+            )
+        if trigger_blacklisted:
+            raise ConflictError(
+                "This director is auto-blacklisted by a blacklisted company. "
+                "Unblacklist the company or source director first."
+            )
     
     director.is_blacklisted = False
     director.blacklist_reason = None

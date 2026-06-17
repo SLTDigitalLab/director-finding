@@ -43,7 +43,7 @@ export default function BlacklistPanel() {
       await unblacklistDirector(id)
       await loadData()
     } catch (err) {
-      alert('Could not unblacklist director.')
+      alert(err.response?.data?.detail || 'Could not unblacklist director.')
     }
   }
 
@@ -153,7 +153,9 @@ export default function BlacklistPanel() {
                     <button
                       type="button"
                       onClick={() => handleUnblacklistDirector(d.id, d.full_name)}
-                      className="btn-ghost !text-danger hover:!bg-danger-muted/30 text-xs px-2.5 py-1 font-semibold border border-danger/20 hover:border-danger rounded shrink-0"
+                      disabled={d.blacklist_auto}
+                      title={d.blacklist_auto ? 'Auto-blacklisted: unblacklist company/source director first' : 'Unblacklist'}
+                      className="btn-ghost !text-danger hover:!bg-danger-muted/30 text-xs px-2.5 py-1 font-semibold border border-danger/20 hover:border-danger rounded shrink-0 disabled:opacity-40"
                     >
                       Unblacklist
                     </button>

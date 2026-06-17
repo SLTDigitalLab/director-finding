@@ -285,7 +285,7 @@ export default function DirectorsTable({ refreshKey, variant = 'registry' }) {
       await unblacklistDirector(id)
       await load()
     } catch (err) {
-      alert('Could not unblacklist director.')
+      alert(err.response?.data?.detail || 'Could not unblacklist director.')
     }
   }
 
@@ -607,8 +607,9 @@ export default function DirectorsTable({ refreshKey, variant = 'registry' }) {
                             e.stopPropagation()
                             handleUnblacklist(d.id)
                           }}
-                          className="btn-icon text-danger hover:text-danger-dark"
-                          title="Unblacklist director"
+                          disabled={d.blacklist_auto}
+                          className="btn-icon text-danger hover:text-danger-dark disabled:opacity-40"
+                          title={d.blacklist_auto ? 'Auto-blacklisted: unblacklist company/source director first' : 'Unblacklist director'}
                         >
                           <ShieldAlert className="h-3.5 w-3.5" />
                         </button>
@@ -729,7 +730,9 @@ export default function DirectorsTable({ refreshKey, variant = 'registry' }) {
                             <button
                               type="button"
                               onClick={() => handleUnblacklist(d.id)}
-                              className="btn-ghost !text-danger hover:!bg-danger-muted/30 text-xs px-3 py-1.5 font-semibold border border-danger/30 hover:border-danger rounded shrink-0"
+                              disabled={d.blacklist_auto}
+                              title={d.blacklist_auto ? 'Auto-blacklisted: unblacklist company/source director first' : 'Unblacklist director'}
+                              className="btn-ghost !text-danger hover:!bg-danger-muted/30 text-xs px-3 py-1.5 font-semibold border border-danger/30 hover:border-danger rounded shrink-0 disabled:opacity-40"
                             >
                               Unblacklist Director
                             </button>

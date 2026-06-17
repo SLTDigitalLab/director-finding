@@ -733,7 +733,10 @@ def unblacklist_director_endpoint(
     director_id: int,
     db: Session = Depends(get_db)
 ):
-    director = crud.unblacklist_director(db, director_id)
+    try:
+        director = crud.unblacklist_director(db, director_id)
+    except crud.ConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     if not director:
         raise HTTPException(status_code=404, detail="Director not found.")
     return director
