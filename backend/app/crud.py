@@ -236,12 +236,23 @@ def link_director_to_company(db: Session, director_id: int, company_id: int):
     director = db.query(models.Director).filter(models.Director.id == director_id).first()
     if director and company and director not in company.directors:
         company.directors.append(director)
-        if director.is_blacklisted:
-            ensure_blacklisted_company(
+        db.flush()
+        company_blacklist = find_blacklisted_company_by_name(db, company.name)
+        if company_blacklist:
+            _cascade_blacklist_network(
                 db,
-                company.name,
-                director.blacklist_reason or f"Associated with blacklisted director {director.full_name}",
-                is_explicit=False
+                reason=company_blacklist.reason,
+                notes=company_blacklist.notes,
+                seed_director_ids=set(),
+                seed_company_names={normalize_company_name(company.name)},
+            )
+        if director.is_blacklisted:
+            _cascade_blacklist_network(
+                db,
+                reason=director.blacklist_reason,
+                notes=director.blacklist_notes,
+                seed_director_ids={director.id},
+                seed_company_names=set(),
             )
         db.commit()
 
@@ -327,6 +338,25 @@ def update_company(db: Session, company_id: int, updates: dict) -> models.Compan
     return get_company_with_directors(db, company_id)
 
 
+def create_company(db: Session, data: dict) -> models.Company:
+    name = (data.get("name") or "").strip().upper()
+    if not name:
+        raise ConflictError("Company name is required.")
+    if db.query(models.Company).filter(models.Company.name == name).first():
+        raise ConflictError("A company with this name already exists.")
+
+    company = models.Company(
+        name=name,
+        company_type=_clean_optional_str(data.get("company_type")),
+        registered_address=_clean_optional_str(data.get("registered_address")),
+        name_approval_number=_clean_optional_str(data.get("name_approval_number")),
+    )
+    db.add(company)
+    db.commit()
+    db.refresh(company)
+    return get_company_with_directors(db, company.id)
+
+
 def _apply_blacklist_fields(db: Session, director: models.Director, data: dict) -> None:
     """Set blacklist status and sync company blacklist."""
     if "is_blacklisted" in data:
@@ -381,33 +411,74 @@ def _apply_blacklist_fields(db: Session, director: models.Director, data: dict) 
 
 
 def create_director(db: Session, data: dict) -> models.Director:
+    company_id = data.get("company_id")
+    company = (
+        db.query(models.Company)
+        .options(joinedload(models.Company.directors))
+        .filter(models.Company.id == company_id)
+        .first()
+    )
+    if not company:
+        raise ConflictError("Select a valid company before adding a director.")
+
     nic_stored = format_nic_for_storage(data.get("nic_passport"))
     has_nic = bool(normalize_nic(nic_stored))
-
-    if has_nic and find_director_by_nic(db, nic_stored):
-        raise ConflictError("A director with this NIC or passport already exists.")
-
     name = (data.get("full_name") or "").strip().upper()
     if not name:
         raise ConflictError("Full name is required.")
 
-    email = _clean_optional_str(data.get("email"))
-    director = models.Director(
-        full_name=name,
-        nic_passport=nic_stored if has_nic else None,
-        id_type=_clean_optional_str(data.get("id_type")),
-        id_country=_clean_optional_str(data.get("id_country")),
-        residential_address=_clean_optional_str(data.get("residential_address")),
-        email=normalize_email(email) if email else None,
-        is_blacklisted=bool(data.get("is_blacklisted")),
-        blacklist_company_name=normalize_company_name(data.get("blacklist_company_name")),
-        blacklist_reason=_clean_optional_str(data.get("blacklist_reason")),
-        blacklist_notes=_clean_optional_str(data.get("blacklist_notes")),
-    )
-    db.add(director)
+    if has_nic:
+        director = find_director_by_nic(db, nic_stored)
+    else:
+        director = find_director_by_name_email(db, data.get("full_name"), data.get("email"))
+        if not director:
+            director = find_director_in_company_by_name(db, company.name, data.get("full_name"))
+
+    existing_director = director is not None
+    if director:
+        if director not in company.directors:
+            company.directors.append(director)
+        merge_director_from_pdf(director, data)
+    else:
+        email = _clean_optional_str(data.get("email"))
+        director = models.Director(
+            full_name=name,
+            nic_passport=nic_stored if has_nic else None,
+            id_type=_clean_optional_str(data.get("id_type")),
+            id_country=_clean_optional_str(data.get("id_country")),
+            residential_address=_clean_optional_str(data.get("residential_address")),
+            email=normalize_email(email) if email else None,
+            is_blacklisted=bool(data.get("is_blacklisted")),
+            blacklist_company_name=normalize_company_name(data.get("blacklist_company_name")),
+            blacklist_reason=_clean_optional_str(data.get("blacklist_reason")),
+            blacklist_notes=_clean_optional_str(data.get("blacklist_notes")),
+        )
+        company.directors.append(director)
+        db.add(director)
+
     db.flush()
-    if director.is_blacklisted:
+    data = dict(data)
+    if data.get("is_blacklisted") and not data.get("blacklist_company_name"):
+        data["blacklist_company_name"] = company.name
+    if data.get("is_blacklisted"):
         _apply_blacklist_fields(db, director, data)
+    elif existing_director and director.is_blacklisted:
+        _cascade_blacklist_network(
+            db,
+            reason=director.blacklist_reason,
+            notes=director.blacklist_notes,
+            seed_director_ids={director.id},
+            seed_company_names=set(),
+        )
+    elif find_blacklisted_company_by_name(db, company.name):
+        bc = find_blacklisted_company_by_name(db, company.name)
+        _cascade_blacklist_network(
+            db,
+            reason=bc.reason if bc else None,
+            notes=bc.notes if bc else None,
+            seed_director_ids=set(),
+            seed_company_names={normalize_company_name(company.name)},
+        )
     db.commit()
     db.refresh(director)
     return get_director_with_companies(db, director.id)

@@ -203,6 +203,7 @@ director-finding/
 | Method | Endpoint                                      | Description              |
 | ------ | --------------------------------------------- | ------------------------ |
 | GET    | `/api/companies`                              | List companies with directors |
+| POST   | `/api/companies`                              | Create company manually  |
 | PATCH  | `/api/companies/{id}`                         | Update company           |
 | DELETE | `/api/companies/{id}`                         | Delete company           |
 | DELETE | `/api/companies/{id}/directors/{director_id}` | Unlink director from company |
@@ -214,7 +215,7 @@ director-finding/
 | Method | Endpoint                        | Description                    |
 | ------ | ------------------------------- | ------------------------------ |
 | GET    | `/api/directors`                | List directors (`?status=all\|active\|blacklisted`) |
-| POST   | `/api/directors`                | Create director manually       |
+| POST   | `/api/directors`                | Create/link director manually; requires `company_id` |
 | PATCH  | `/api/directors/{id}`           | Update director                |
 | DELETE | `/api/directors/{id}`           | Delete director                |
 | PATCH  | `/api/directors/{id}/blacklist` | Blacklist director             |
