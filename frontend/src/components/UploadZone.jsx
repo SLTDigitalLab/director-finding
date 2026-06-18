@@ -70,6 +70,7 @@ export default function UploadZone({ onSuccess }) {
   const [extractResponse, setExtractResponse] = useState(null)
   const [saveResult, setSaveResult] = useState(null)
   const [error, setError] = useState('')
+  const [editable, setEditable] = useState(null)
 
   const onDrop = useCallback((accepted) => {
     if (accepted.length === 0) return
@@ -77,6 +78,7 @@ export default function UploadZone({ onSuccess }) {
     setExtractResponse(null)
     setSaveResult(null)
     setError('')
+    setEditable(null)
   }, [])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -94,6 +96,7 @@ export default function UploadZone({ onSuccess }) {
     setProgress(0)
     setExtractLoading(false)
     setSaveLoading(false)
+    setEditable(null)
   }
 
   const handleExtract = async () => {
@@ -105,6 +108,7 @@ export default function UploadZone({ onSuccess }) {
     try {
       const res = await extractPdf(file, setProgress)
       setExtractResponse(res.data)
+      setEditable(structuredClone(res.data.extraction))
     } catch (err) {
       setError(err.response?.data?.detail || 'Extraction failed. Please try again.')
     } finally {
@@ -113,11 +117,11 @@ export default function UploadZone({ onSuccess }) {
   }
 
   const handleSave = async () => {
-    if (!extractResponse?.extraction) return
+    if (!editable) return
     setSaveLoading(true)
     setError('')
     try {
-      const res = await saveExtraction(extractResponse.extraction)
+      const res = await saveExtraction(editable)
       setSaveResult(res.data)
       setExtractResponse(null)
       setFile(null)
@@ -326,9 +330,11 @@ export default function UploadZone({ onSuccess }) {
                   }
                 >
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-display text-base font-semibold leading-snug text-ink sm:text-lg">
-                      {preview.company_name}
-                    </p>
+                    <input
+                      value={editable.company_name}
+                      onChange={e => setEditable(prev => ({...prev, company_name: e.target.value}))}
+                      className="min-w-0 flex-1 cursor-text rounded-sm border border-ink-200 bg-white/40 px-1.5 font-display text-base font-semibold leading-snug text-ink transition-colors duration-150 hover:border-ink-300 hover:bg-white/60 focus:border-gold focus:bg-white focus:outline-none focus:ring-1 focus:ring-gold sm:text-lg"
+                    />
                     {preview.company_is_blacklisted && (
                       <span className="inline-flex items-center gap-1 rounded-sm border border-danger/40 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-danger">
                         <ShieldAlert className="h-3 w-3" />
@@ -336,14 +342,18 @@ export default function UploadZone({ onSuccess }) {
                       </span>
                     )}
                   </div>
-                  {preview.company_type && (
-                    <p className="mt-0.5 text-sm text-ink-500">{preview.company_type}</p>
-                  )}
-                  {preview.registered_address && (
-                    <p className="mt-2 text-xs leading-relaxed text-ink-500 font-body">
-                      {preview.registered_address}
-                    </p>
-                  )}
+                  <input
+                    value={editable.company_type || ''}
+                    onChange={e => setEditable(prev => ({...prev, company_type: e.target.value}))}
+                    placeholder="Company type"
+                    className="mt-0.5 w-full cursor-text rounded-sm border border-ink-200 bg-white/40 px-1.5 text-sm text-ink-500 transition-colors duration-150 hover:border-ink-300 hover:bg-white/60 focus:border-gold focus:bg-white focus:outline-none focus:ring-1 focus:ring-gold"
+                  />
+                  <input
+                    value={editable.registered_address || ''}
+                    onChange={e => setEditable(prev => ({...prev, registered_address: e.target.value}))}
+                    placeholder="Registered address"
+                    className="mt-2 w-full cursor-text rounded-sm border border-ink-200 bg-white/40 px-1.5 font-body text-xs leading-relaxed text-ink-500 transition-colors duration-150 hover:border-ink-300 hover:bg-white/60 focus:border-gold focus:bg-white focus:outline-none focus:ring-1 focus:ring-gold"
+                  />
                 </div>
 
                 <div>
@@ -387,6 +397,7 @@ export default function UploadZone({ onSuccess }) {
                         {preview.directors.map((d, i) => {
                           const others = d.other_companies ?? []
                           const knownInDb = d.id != null
+                          const ed = editable?.directors?.[i]
                           return (
                             <tr
                               key={`${d.nic_passport || d.full_name}-${i}`}
@@ -394,12 +405,27 @@ export default function UploadZone({ onSuccess }) {
                             >
                               <td className="px-3 py-3 font-mono text-xs text-ink-400">{i + 1}</td>
                               <td className="min-w-0 px-3 py-3">
-                                <p className="font-mono text-sm font-semibold text-ink-800">
-                                  {d.nic_passport || (
-                                    <span className="text-ink-400 font-normal">No ID on form</span>
-                                  )}
-                                </p>
-                                <p className="mt-1 font-body text-sm leading-snug text-ink">{d.full_name}</p>
+                                <input
+                                  value={ed?.nic_passport || ''}
+                                  onChange={e => {
+                                    const updated = [...editable.directors]
+                                    updated[i] = {...updated[i], nic_passport: e.target.value}
+                                    setEditable(prev => ({...prev, directors: updated}))
+                                  }}
+                                  placeholder="No ID on form"
+                                  className="w-full cursor-text rounded-sm border border-ink-200 bg-white/40 px-1.5 font-mono text-sm font-semibold text-ink-800 transition-colors duration-150 hover:border-ink-300 hover:bg-white/60 focus:border-gold focus:bg-white focus:outline-none focus:ring-1 focus:ring-gold"
+                                />
+                                <textarea
+                                  value={ed?.full_name || ''}
+                                  onChange={e => {
+                                    const updated = [...editable.directors]
+                                    updated[i] = {...updated[i], full_name: e.target.value}
+                                    setEditable(prev => ({...prev, directors: updated}))
+                                  }}
+                                  placeholder="Full name"
+                                  rows={3}
+                                  className="mt-1 w-full resize-none overflow-y-auto rounded-sm border border-ink-200 bg-white/40 px-1.5 py-1 font-body text-sm leading-snug text-ink transition-colors duration-150 hover:border-ink-300 hover:bg-white/60 focus:border-gold focus:bg-white focus:outline-none focus:ring-1 focus:ring-gold"
+                                />
                                 {d.missing_nic && d.matched_by === 'name_email' && (
                                   <p className="mt-1 text-xs text-gold-dark">
                                     Matched by name + email — no ID on this form. ID can be added later.
@@ -424,10 +450,10 @@ export default function UploadZone({ onSuccess }) {
                                     {d.blacklist_reason ? ` — ${d.blacklist_reason}` : ''}
                                   </p>
                                 )}
-                                {(d.id_type || d.id_country) && (
+                                {(ed?.id_type || ed?.id_country) && (
                                   <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-ink-400">
-                                    {d.id_type && <span className="tag !px-2 !py-0.5">{d.id_type}</span>}
-                                    {d.id_country && <span className="tag !px-2 !py-0.5">{d.id_country}</span>}
+                                    {ed?.id_type && <span className="tag !px-2 !py-0.5">{ed.id_type}</span>}
+                                    {ed?.id_country && <span className="tag !px-2 !py-0.5">{ed.id_country}</span>}
                                   </div>
                                 )}
                               </td>
