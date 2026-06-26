@@ -6,8 +6,8 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: director_finding
-    ports:
-      - "5432:5432"
+    # ports:
+    #   - "9002:5432"    # uncomment to expose DB for debugging
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -28,7 +28,7 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "9001:8000"
 
   frontend:
     build:
@@ -37,7 +37,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "80:80"
+      - "9000:80"
 
 volumes:
   pgdata:
