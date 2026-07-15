@@ -24,6 +24,8 @@ services:
       - ./backend/.env
     environment:
       DATABASE_URL: postgresql://postgres:password@db:5432/director_finding
+      AZURE_TENANT_ID: ${VITE_AZURE_TENANT_ID}
+      AZURE_CLIENT_ID: ${VITE_AZURE_CLIENT_ID}
     depends_on:
       db:
         condition: service_healthy
@@ -33,6 +35,11 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        VITE_AZURE_CLIENT_ID: ${VITE_AZURE_CLIENT_ID}
+        VITE_AZURE_TENANT_ID: ${VITE_AZURE_TENANT_ID}
+        VITE_ADMIN_EMAIL: ${VITE_ADMIN_EMAIL}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://backend:8000}
     restart: unless-stopped
     depends_on:
       - backend
