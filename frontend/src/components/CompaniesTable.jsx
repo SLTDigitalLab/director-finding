@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Building2, Trash2, ChevronDown, ChevronUp, RefreshCw, Pencil, ShieldAlert } from 'lucide-react'
+import { Building2, Trash2, ChevronDown, ChevronUp, RefreshCw, Pencil, ShieldAlert, Plus } from 'lucide-react'
 import {
   getCompanies,
+  createCompany,
   deleteCompany,
   updateCompany,
   unlinkDirectorFromCompany,
@@ -83,6 +84,17 @@ export default function CompaniesTable({ refreshKey }) {
 
   const toggle = (id) => setExpanded(p => ({ ...p, [id]: !p[id] }))
 
+  const openCreate = () => {
+    setEditError('')
+    setEditForm({
+      name: '',
+      company_type: '',
+      registered_address: '',
+      name_approval_number: '',
+    })
+    setEditCompany({ id: null })
+  }
+
   const openEdit = (co, e) => {
     e.stopPropagation()
     setEditError('')
@@ -113,12 +125,17 @@ export default function CompaniesTable({ refreshKey }) {
     setSaving(true)
     setEditError('')
     try {
-      await updateCompany(editCompany.id, {
+      const payload = {
         name,
         company_type: editForm.company_type.trim() || null,
         registered_address: editForm.registered_address.trim() || null,
         name_approval_number: editForm.name_approval_number.trim() || null,
-      })
+      }
+      if (editCompany.id) {
+        await updateCompany(editCompany.id, payload)
+      } else {
+        await createCompany(payload)
+      }
       setEditCompany(null)
       await load()
     } catch (err) {
@@ -151,6 +168,88 @@ export default function CompaniesTable({ refreshKey }) {
     }
   }
 
+  const companyModal = (
+    <Modal
+      open={Boolean(editCompany)}
+      onClose={closeEdit}
+      title={editCompany?.id ? 'Edit company' : 'Add company'}
+      description={editCompany?.id ? 'Update registry details. Director links are unchanged.' : 'Create a company first, then add directors and link them to it.'}
+      titleId="edit-company-title"
+      closeDisabled={saving}
+    >
+      <form onSubmit={handleSaveEdit} className="space-y-4 px-5 py-5">
+            {editError && (
+              <p className="rounded-sm border border-danger/30 bg-danger-muted px-3 py-2 text-sm text-danger" role="alert">
+                {editError}
+              </p>
+            )}
+            <div>
+              <label className="label mb-1.5 block" htmlFor="co-name">
+                Company name
+              </label>
+              <input
+                id="co-name"
+                className="input-field w-full"
+                value={editForm.name}
+                onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                autoComplete="organization"
+                required
+              />
+            </div>
+            <div>
+              <label className="label mb-1.5 block" htmlFor="co-type">
+                Company type
+              </label>
+              <input
+                id="co-type"
+                className="input-field w-full"
+                value={editForm.company_type}
+                onChange={(e) => setEditForm((f) => ({ ...f, company_type: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label mb-1.5 block" htmlFor="co-addr">
+                Registered address
+              </label>
+              <textarea
+                id="co-addr"
+                className="input-field min-h-[88px] w-full resize-y font-body text-sm"
+                value={editForm.registered_address}
+                onChange={(e) => setEditForm((f) => ({ ...f, registered_address: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label mb-1.5 block" htmlFor="co-approval">
+                Name approval number
+              </label>
+              <input
+                id="co-approval"
+                className="input-field w-full font-mono text-sm"
+                value={editForm.name_approval_number}
+                onChange={(e) => setEditForm((f) => ({ ...f, name_approval_number: e.target.value }))}
+              />
+            </div>
+            <div className="flex flex-wrap gap-3 border-t border-ink-100 pt-4">
+              <button type="submit" disabled={saving} className="btn-primary gap-2">
+                {saving ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    Saving…
+                  </>
+                ) : editCompany?.id ? (
+                  'Save changes'
+                ) : (
+                  'Add company'
+                )}
+              </button>
+              <button type="button" onClick={closeEdit} disabled={saving} className="btn-ghost">
+                Cancel
+              </button>
+            </div>
+      </form>
+    </Modal>
+  )
+
   if (loading) {
     return (
       <div className="card flex items-center justify-center gap-3 py-20 text-ink-500">
@@ -162,95 +261,32 @@ export default function CompaniesTable({ refreshKey }) {
 
   if (companies.length === 0) {
     return (
-      <div className="empty-panel">
-        <Building2 className="mb-4 h-10 w-10 text-ink-200" />
-        <p className="font-body text-sm font-medium text-ink-600">No companies yet</p>
-        <p className="mt-1 max-w-sm text-sm text-ink-400">Upload a Form 1 PDF to add your first company.</p>
-      </div>
+      <>
+        {companyModal}
+        <div className="empty-panel">
+          <Building2 className="mb-4 h-10 w-10 text-ink-200" />
+          <p className="font-body text-sm font-medium text-ink-600">No companies yet</p>
+          <p className="mt-1 max-w-sm text-sm text-ink-400">Upload a Form 1 PDF or add your first company manually.</p>
+          <button type="button" onClick={openCreate} className="btn-primary mt-5 gap-2">
+            <Plus className="h-4 w-4" />
+            Add company
+          </button>
+        </div>
+      </>
     )
   }
 
   return (
     <>
-      <Modal
-        open={Boolean(editCompany)}
-        onClose={closeEdit}
-        title="Edit company"
-        description="Update registry details. Director links are unchanged."
-        titleId="edit-company-title"
-        closeDisabled={saving}
-      >
-        <form onSubmit={handleSaveEdit} className="space-y-4 px-5 py-5">
-              {editError && (
-                <p className="rounded-sm border border-danger/30 bg-danger-muted px-3 py-2 text-sm text-danger" role="alert">
-                  {editError}
-                </p>
-              )}
-              <div>
-                <label className="label mb-1.5 block" htmlFor="co-name">
-                  Company name
-                </label>
-                <input
-                  id="co-name"
-                  className="input-field w-full"
-                  value={editForm.name}
-                  onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
-                  autoComplete="organization"
-                  required
-                />
-              </div>
-              <div>
-                <label className="label mb-1.5 block" htmlFor="co-type">
-                  Company type
-                </label>
-                <input
-                  id="co-type"
-                  className="input-field w-full"
-                  value={editForm.company_type}
-                  onChange={(e) => setEditForm((f) => ({ ...f, company_type: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="label mb-1.5 block" htmlFor="co-addr">
-                  Registered address
-                </label>
-                <textarea
-                  id="co-addr"
-                  className="input-field min-h-[88px] w-full resize-y font-body text-sm"
-                  value={editForm.registered_address}
-                  onChange={(e) => setEditForm((f) => ({ ...f, registered_address: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="label mb-1.5 block" htmlFor="co-approval">
-                  Name approval number
-                </label>
-                <input
-                  id="co-approval"
-                  className="input-field w-full font-mono text-sm"
-                  value={editForm.name_approval_number}
-                  onChange={(e) => setEditForm((f) => ({ ...f, name_approval_number: e.target.value }))}
-                />
-              </div>
-              <div className="flex flex-wrap gap-3 border-t border-ink-100 pt-4">
-                <button type="submit" disabled={saving} className="btn-primary gap-2">
-                  {saving ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      Saving…
-                    </>
-                  ) : (
-                    'Save changes'
-                  )}
-                </button>
-                <button type="button" onClick={closeEdit} disabled={saving} className="btn-ghost">
-                  Cancel
-                </button>
-              </div>
-        </form>
-      </Modal>
+      {companyModal}
 
       <div className="table-shell animate-fade-in">
+      <div className="flex justify-end border-b border-ink-100 bg-white px-5 py-3">
+        <button type="button" onClick={openCreate} className="btn-primary gap-2 text-xs px-4 py-2">
+          <Plus className="h-4 w-4" />
+          Add company
+        </button>
+      </div>
       {/* Header */}
       <div className="grid grid-cols-12 bg-gradient-to-b from-parchment to-parchment/80 px-5 py-3.5">
         <div className="col-span-5 label">Company Name</div>

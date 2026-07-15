@@ -236,12 +236,23 @@ def link_director_to_company(db: Session, director_id: int, company_id: int):
     director = db.query(models.Director).filter(models.Director.id == director_id).first()
     if director and company and director not in company.directors:
         company.directors.append(director)
-        if director.is_blacklisted:
-            ensure_blacklisted_company(
+        db.flush()
+        company_blacklist = find_blacklisted_company_by_name(db, company.name)
+        if company_blacklist:
+            _cascade_blacklist_network(
                 db,
-                company.name,
-                director.blacklist_reason or f"Associated with blacklisted director {director.full_name}",
-                is_explicit=False
+                reason=company_blacklist.reason,
+                notes=company_blacklist.notes,
+                seed_director_ids=set(),
+                seed_company_names={normalize_company_name(company.name)},
+            )
+        if director.is_blacklisted:
+            _cascade_blacklist_network(
+                db,
+                reason=director.blacklist_reason,
+                notes=director.blacklist_notes,
+                seed_director_ids={director.id},
+                seed_company_names=set(),
             )
         db.commit()
 
@@ -314,7 +325,24 @@ def update_company(db: Session, company_id: int, updates: dict) -> models.Compan
             )
             if taken:
                 raise ConflictError("A company with this name already exists.")
+
+            old_name = company.name
             company.name = new_name
+
+            # Keep blacklisted_companies in sync with the rename so the company
+            # doesn't silently appear unblacklisted after renaming.
+            bc = _blacklisted_company_by_normalized_name(db, old_name)
+            if bc:
+                bc.name = new_name
+
+            # Update directors whose blacklist_company_name referenced the old name.
+            affected = (
+                db.query(models.Director)
+                .filter(models.Director.blacklist_company_name == old_name)
+                .all()
+            )
+            for d in affected:
+                d.blacklist_company_name = new_name
 
     if "company_type" in updates:
         company.company_type = _clean_optional_str(updates["company_type"])
@@ -325,6 +353,25 @@ def update_company(db: Session, company_id: int, updates: dict) -> models.Compan
 
     db.commit()
     return get_company_with_directors(db, company_id)
+
+
+def create_company(db: Session, data: dict) -> models.Company:
+    name = (data.get("name") or "").strip().upper()
+    if not name:
+        raise ConflictError("Company name is required.")
+    if db.query(models.Company).filter(models.Company.name == name).first():
+        raise ConflictError("A company with this name already exists.")
+
+    company = models.Company(
+        name=name,
+        company_type=_clean_optional_str(data.get("company_type")),
+        registered_address=_clean_optional_str(data.get("registered_address")),
+        name_approval_number=_clean_optional_str(data.get("name_approval_number")),
+    )
+    db.add(company)
+    db.commit()
+    db.refresh(company)
+    return get_company_with_directors(db, company.id)
 
 
 def _apply_blacklist_fields(db: Session, director: models.Director, data: dict) -> None:
@@ -364,50 +411,101 @@ def _apply_blacklist_fields(db: Session, director: models.Director, data: dict) 
             seed_company_names=set(),
         )
     elif "is_blacklisted" in data and not director.is_blacklisted:
-        old_companies = [c.name for c in director.companies]
-        old_bl_company = director.blacklist_company_name
-        
+        # Mirror the guard from unblacklist_director: refuse to clear an
+        # auto-blacklisted director while its trigger company is still blacklisted.
+        if director.blacklist_auto:
+            trigger_company = normalize_company_name(director.blacklist_company_name)
+            if trigger_company:
+                trigger_blacklisted = find_blacklisted_company_by_name(db, trigger_company) is not None
+            else:
+                trigger_blacklisted = any(
+                    find_blacklisted_company_by_name(db, c.name) is not None
+                    for c in director.companies
+                )
+            if trigger_blacklisted:
+                raise ConflictError(
+                    "This director is auto-blacklisted by a blacklisted company. "
+                    "Unblacklist the company or source director first."
+                )
+
         director.blacklist_company_name = None
         director.blacklist_reason = None
         director.blacklist_notes = None
         director.blacklist_auto = False
-        
+
         db.flush()
-        
-        for name in old_companies:
-            evaluate_company_blacklist_removal(db, name)
-        if old_bl_company:
-            evaluate_company_blacklist_removal(db, old_bl_company)
+        _sweep_blacklist_network(db)
 
 
 def create_director(db: Session, data: dict) -> models.Director:
+    company_id = data.get("company_id")
+    company = (
+        db.query(models.Company)
+        .options(joinedload(models.Company.directors))
+        .filter(models.Company.id == company_id)
+        .first()
+    )
+    if not company:
+        raise ConflictError("Select a valid company before adding a director.")
+
     nic_stored = format_nic_for_storage(data.get("nic_passport"))
     has_nic = bool(normalize_nic(nic_stored))
-
-    if has_nic and find_director_by_nic(db, nic_stored):
-        raise ConflictError("A director with this NIC or passport already exists.")
-
     name = (data.get("full_name") or "").strip().upper()
     if not name:
         raise ConflictError("Full name is required.")
 
-    email = _clean_optional_str(data.get("email"))
-    director = models.Director(
-        full_name=name,
-        nic_passport=nic_stored if has_nic else None,
-        id_type=_clean_optional_str(data.get("id_type")),
-        id_country=_clean_optional_str(data.get("id_country")),
-        residential_address=_clean_optional_str(data.get("residential_address")),
-        email=normalize_email(email) if email else None,
-        is_blacklisted=bool(data.get("is_blacklisted")),
-        blacklist_company_name=normalize_company_name(data.get("blacklist_company_name")),
-        blacklist_reason=_clean_optional_str(data.get("blacklist_reason")),
-        blacklist_notes=_clean_optional_str(data.get("blacklist_notes")),
-    )
-    db.add(director)
+    if has_nic:
+        director = find_director_by_nic(db, nic_stored)
+    else:
+        director = find_director_by_name_email(db, data.get("full_name"), data.get("email"))
+        if not director:
+            director = find_director_in_company_by_name(db, company.name, data.get("full_name"))
+
+    existing_director = director is not None
+    if director:
+        if director not in company.directors:
+            company.directors.append(director)
+        merge_director_from_pdf(director, data)
+    else:
+        email = _clean_optional_str(data.get("email"))
+        director = models.Director(
+            full_name=name,
+            nic_passport=nic_stored if has_nic else None,
+            id_type=_clean_optional_str(data.get("id_type")),
+            id_country=_clean_optional_str(data.get("id_country")),
+            residential_address=_clean_optional_str(data.get("residential_address")),
+            email=normalize_email(email) if email else None,
+            is_blacklisted=bool(data.get("is_blacklisted")),
+            blacklist_company_name=normalize_company_name(data.get("blacklist_company_name")),
+            blacklist_reason=_clean_optional_str(data.get("blacklist_reason")),
+            blacklist_notes=_clean_optional_str(data.get("blacklist_notes")),
+        )
+        company.directors.append(director)
+        db.add(director)
+
     db.flush()
-    if director.is_blacklisted:
+    data = dict(data)
+    if data.get("is_blacklisted") and not data.get("blacklist_company_name"):
+        data["blacklist_company_name"] = company.name
+    if data.get("is_blacklisted"):
         _apply_blacklist_fields(db, director, data)
+    elif existing_director and director.is_blacklisted:
+        _cascade_blacklist_network(
+            db,
+            reason=director.blacklist_reason,
+            notes=director.blacklist_notes,
+            seed_director_ids={director.id},
+            seed_company_names=set(),
+        )
+    elif find_blacklisted_company_by_name(db, company.name):
+        bc = find_blacklisted_company_by_name(db, company.name)
+        _cascade_blacklist_network(
+            db,
+            reason=bc.reason if bc else None,
+            notes=bc.notes if bc else None,
+            seed_director_ids=set(),
+            seed_company_names={normalize_company_name(company.name)},
+        )
     db.commit()
     db.refresh(director)
     return get_director_with_companies(db, director.id)
@@ -463,28 +561,48 @@ def update_director(db: Session, director_id: int, updates: dict) -> models.Dire
 
 
 def delete_company(db: Session, company_id: int):
-    company = db.query(models.Company).filter(models.Company.id == company_id).first()
-    if company:
-        db.delete(company)
-        db.commit()
+    company = (
+        db.query(models.Company)
+        .options(joinedload(models.Company.directors))
+        .filter(models.Company.id == company_id)
+        .first()
+    )
+    if not company:
+        return
+
+    # Remove the matching blacklisted_companies row (no FK, so it won't cascade).
+    bc = find_blacklisted_company_by_name(db, company.name)
+    if bc:
+        db.delete(bc)
+
+    db.delete(company)
+    db.flush()
+
+    # Recompute the auto-blacklist network: directors that were only reachable
+    # through this (now-deleted) company get cleaned up automatically.
+    _sweep_blacklist_network(db)
+    db.commit()
 
 
 def delete_director(db: Session, director_id: int):
-    director = db.query(models.Director).filter(models.Director.id == director_id).first()
-    if director:
-        old_companies = [c.name for c in director.companies]
-        old_bl_company = director.blacklist_company_name
-        was_blacklisted = director.is_blacklisted
-        
-        db.delete(director)
-        db.commit()
-        
-        if was_blacklisted:
-            for name in old_companies:
-                evaluate_company_blacklist_removal(db, name)
-            if old_bl_company:
-                evaluate_company_blacklist_removal(db, old_bl_company)
-            db.commit()
+    director = (
+        db.query(models.Director)
+        .options(joinedload(models.Director.companies))
+        .filter(models.Director.id == director_id)
+        .first()
+    )
+    if not director:
+        return
+
+    was_blacklisted = director.is_blacklisted
+    db.delete(director)
+    db.flush()
+
+    if was_blacklisted:
+        # Recompute the network now that this explicit/auto source is gone.
+        _sweep_blacklist_network(db)
+
+    db.commit()
 
 
 def normalize_company_name(name: str | None) -> str | None:
@@ -702,6 +820,134 @@ def _cascade_blacklist_network(
                 pending_director_ids.add(d.id)
 
 
+def _sweep_blacklist_network(db: Session) -> None:
+    """
+    Recompute the auto-blacklist closure after an explicit blacklist source was removed.
+
+    An entity (director or company) remains blacklisted iff it is reachable in the
+    bipartite (directors <-> companies via company_director links) graph from any
+    explicit blacklist source still on file:
+      - a Director with is_blacklisted=True AND blacklist_auto=False, or
+      - a BlacklistedCompany row with is_explicit=True.
+
+    Any currently auto-blacklisted director or auto BlacklistedCompany row that is
+    NOT reachable is cleared. This is the symmetric counterpart to
+    `_cascade_blacklist_network` and is required because cascade can create cycles
+    that single-hop cleanup cannot untangle.
+
+    Must be called after the explicit source the user is removing has already been
+    cleared/deleted, so it is not (incorrectly) treated as a remaining root.
+    """
+    explicit_companies = (
+        db.query(models.BlacklistedCompany)
+        .filter(models.BlacklistedCompany.is_explicit.is_(True))
+        .all()
+    )
+    explicit_directors = (
+        db.query(models.Director)
+        .filter(models.Director.is_blacklisted.is_(True))
+        .filter(models.Director.blacklist_auto.is_(False))
+        .all()
+    )
+
+    reachable_director_ids: set[int] = {d.id for d in explicit_directors}
+    reachable_company_keys: set[str] = set()
+    for bc in explicit_companies:
+        key = normalize_company_name(bc.name)
+        if key:
+            reachable_company_keys.add(key)
+
+    pending_director_ids: set[int] = set(reachable_director_ids)
+    pending_company_keys: set[str] = set(reachable_company_keys)
+
+    while pending_director_ids or pending_company_keys:
+        if pending_director_ids:
+            ids = list(pending_director_ids)
+            pending_director_ids.clear()
+            dirs = (
+                db.query(models.Director)
+                .options(joinedload(models.Director.companies))
+                .filter(models.Director.id.in_(ids))
+                .all()
+            )
+            for d in dirs:
+                for co in d.companies:
+                    key = normalize_company_name(co.name)
+                    if key and key not in reachable_company_keys:
+                        reachable_company_keys.add(key)
+                        pending_company_keys.add(key)
+        if pending_company_keys:
+            names = list(pending_company_keys)
+            pending_company_keys.clear()
+            cos = (
+                db.query(models.Company)
+                .options(joinedload(models.Company.directors))
+                .filter(models.Company.name.in_(names))
+                .all()
+            )
+            for co in cos:
+                for d in co.directors:
+                    if d.id not in reachable_director_ids:
+                        reachable_director_ids.add(d.id)
+                        pending_director_ids.add(d.id)
+
+    # Clear auto-blacklisted directors that fell out of the reachable set.
+    auto_directors = (
+        db.query(models.Director)
+        .filter(models.Director.is_blacklisted.is_(True))
+        .filter(models.Director.blacklist_auto.is_(True))
+        .all()
+    )
+    for d in auto_directors:
+        if d.id not in reachable_director_ids:
+            d.is_blacklisted = False
+            d.blacklist_auto = False
+            d.blacklist_reason = None
+            d.blacklist_notes = None
+            d.blacklist_company_name = None
+
+    # Remove auto BlacklistedCompany rows that fell out of the reachable set;
+    # remember which auto rows survive so we can detect the "missing BC" case below.
+    auto_companies = (
+        db.query(models.BlacklistedCompany)
+        .filter(models.BlacklistedCompany.is_explicit.is_(False))
+        .all()
+    )
+    surviving_auto_keys: set[str] = set()
+    for bc in auto_companies:
+        key = normalize_company_name(bc.name)
+        if not key or key not in reachable_company_keys:
+            db.delete(bc)
+        else:
+            surviving_auto_keys.add(key)
+
+    # If a reachable company has no BlacklistedCompany row anymore (e.g. its explicit
+    # row was just removed but it is still reachable via another explicit source),
+    # add it back as an auto entry so the network stays consistent.
+    explicit_keys: set[str] = set()
+    for bc in explicit_companies:
+        key = normalize_company_name(bc.name)
+        if key:
+            explicit_keys.add(key)
+    existing_keys = surviving_auto_keys | explicit_keys
+    for key in reachable_company_keys - existing_keys:
+        reason: str | None = None
+        co = (
+            db.query(models.Company)
+            .options(joinedload(models.Company.directors))
+            .filter(models.Company.name == key)
+            .first()
+        )
+        if co:
+            for d in co.directors:
+                if d.is_blacklisted:
+                    reason = f"Associated with blacklisted director {d.full_name}"
+                    break
+        db.add(models.BlacklistedCompany(name=key, reason=reason, is_explicit=False))
+
+    db.flush()
+
+
 def blacklist_director(db: Session, director_id: int, reason: str, notes: str | None) -> models.Director | None:
     director = (
         db.query(models.Director)
@@ -757,20 +1003,20 @@ def unblacklist_director(db: Session, director_id: int) -> models.Director | Non
                 "This director is auto-blacklisted by a blacklisted company. "
                 "Unblacklist the company or source director first."
             )
-    
+
     director.is_blacklisted = False
     director.blacklist_reason = None
     director.blacklist_notes = None
     director.blacklist_company_name = None
     director.blacklist_auto = False
-    
-    companies_to_check = [c.name for c in director.companies]
-    
+
     db.flush()
-    
-    for name in companies_to_check:
-        evaluate_company_blacklist_removal(db, name)
-        
+
+    # Recompute the network: any auto entity that is no longer supported by an
+    # explicit blacklist source is cleared. This is the symmetric counterpart to
+    # the cascade and correctly handles cycles created during blacklist.
+    _sweep_blacklist_network(db)
+
     db.commit()
     db.refresh(director)
     return director
@@ -824,6 +1070,17 @@ def blacklist_company(db: Session, company_id: int, reason: str, notes: str | No
 
 
 def unblacklist_company(db: Session, company_id: int) -> models.Company | None:
+    """
+    Explicitly clear a company's blacklist. Returns None if the company is not
+    currently *explicitly* blacklisted (so the route can surface a 400), and the
+    refreshed company otherwise.
+
+    After deleting the explicit BlacklistedCompany row, the auto-blacklist closure
+    is recomputed via `_sweep_blacklist_network`: anything that is still reachable
+    from another explicit source stays auto-blacklisted, anything else is cleared.
+    This is what untangles cycles like A->director->B->director->A that
+    single-hop cleanup cannot resolve.
+    """
     company = (
         db.query(models.Company)
         .options(joinedload(models.Company.directors).joinedload(models.Director.companies))
@@ -835,50 +1092,13 @@ def unblacklist_company(db: Session, company_id: int) -> models.Company | None:
 
     bc = find_blacklisted_company_by_name(db, company.name)
     if not (bc and bc.is_explicit):
-        return get_company_with_directors(db, company_id)
+        # Signal "not explicitly blacklisted" to the route.
+        return None
 
-    company_key = normalize_company_name(company.name)
-
-    # Cascade: unblacklist directors that were auto-blacklisted by this company
-    other_companies_to_evaluate: set[str] = set()
-    for director in list(company.directors):
-        if not director.is_blacklisted or not director.blacklist_auto:
-            continue
-        if normalize_company_name(director.blacklist_company_name) != company_key:
-            continue
-        # Only unblacklist if no other blacklisted company still applies
-        has_other_bl = any(
-            normalize_company_name(c.name) != company_key
-            and find_blacklisted_company_by_name(db, c.name) is not None
-            for c in director.companies
-        )
-        if not has_other_bl:
-            for c in director.companies:
-                if normalize_company_name(c.name) != company_key:
-                    other_companies_to_evaluate.add(c.name)
-            director.is_blacklisted = False
-            director.blacklist_reason = None
-            director.blacklist_notes = None
-            director.blacklist_company_name = None
-            director.blacklist_auto = False
-
+    db.delete(bc)
     db.flush()
 
-    # Remove or downgrade the BlacklistedCompany entry
-    remaining_bl_directors = [d for d in company.directors if d.is_blacklisted]
-    if remaining_bl_directors:
-        bc.is_explicit = False
-        bl_dir = remaining_bl_directors[0]
-        bc.reason = f"Associated with blacklisted director {bl_dir.full_name}"
-        bc.notes = None
-    else:
-        db.delete(bc)
-
-    db.flush()
-
-    # Evaluate other companies of the newly-unblacklisted directors for removal
-    for co_name in other_companies_to_evaluate:
-        evaluate_company_blacklist_removal(db, co_name)
+    _sweep_blacklist_network(db)
 
     db.commit()
     return get_company_with_directors(db, company_id)

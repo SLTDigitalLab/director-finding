@@ -18,6 +18,7 @@ class DirectorBase(BaseModel):
 
 class DirectorCreate(DirectorBase):
     """Create a director manually (registry or blacklist)."""
+    company_id: int
 
 
 class Director(DirectorBase):
@@ -55,6 +56,10 @@ class Company(CompanyBase):
     blacklist_notes: Optional[str] = None
     is_explicit: bool = False
     model_config = {"from_attributes": True}
+
+
+class CompanyCreate(CompanyBase):
+    """Create a company manually before linking directors."""
 
 
 

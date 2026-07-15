@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import {
   getDirectors,
+  getCompanies,
   createDirector,
   deleteDirector,
   updateDirector,
@@ -24,6 +25,7 @@ import {
 import Modal from './Modal'
 
 const emptyForm = {
+  company_id: '',
   full_name: '',
   nic_passport: '',
   id_type: '',
@@ -55,6 +57,7 @@ function formToPayload(form) {
   const isPassport = form.id_type === 'PASSPORT'
   const isBlacklisted = form.status === 'blacklisted'
   return {
+    company_id: form.company_id ? Number(form.company_id) : null,
     full_name: form.full_name.trim(),
     nic_passport: form.nic_passport.trim() || null,
     id_type: form.id_type || null,
@@ -68,7 +71,7 @@ function formToPayload(form) {
   }
 }
 
-function DirectorFormFields({ form, setForm, formError, companySuggestions, onNicBlur }) {
+function DirectorFormFields({ form, setForm, formError, companies, editing, companySuggestions, onNicBlur }) {
   const isPassport = form.id_type === 'PASSPORT'
   const isBlacklisted = form.status === 'blacklisted'
 
@@ -82,20 +85,63 @@ function DirectorFormFields({ form, setForm, formError, companySuggestions, onNi
           {formError}
         </p>
       )}
-      <div>
-        <label className="label mb-1.5 block" htmlFor="dir-status">
-          Status <span className="text-danger">*</span>
-        </label>
-        <select
-          id="dir-status"
-          className="input-field w-full"
-          value={form.status}
-          onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-        >
-          <option value="active">Active (not blacklisted)</option>
-          <option value="blacklisted">Blacklisted</option>
-        </select>
-      </div>
+      {!editing && (
+        <div>
+          <label className="label mb-1.5 block" htmlFor="dir-company">
+            Company <span className="text-danger">*</span>
+          </label>
+          <select
+            id="dir-company"
+            className="input-field w-full"
+            value={form.company_id}
+            onChange={(e) => {
+              const selected = companies.find((c) => String(c.id) === e.target.value)
+              setForm((f) => ({
+                ...f,
+                company_id: e.target.value,
+                blacklist_company_name:
+                  f.status === 'blacklisted' && selected ? selected.name : f.blacklist_company_name,
+              }))
+            }}
+            required
+          >
+            <option value="">Select company</option>
+            {companies.map((co) => (
+              <option key={co.id} value={co.id}>
+                {co.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-ink-400">
+            Directors must be linked to a company. Add the company first if it is not listed.
+          </p>
+        </div>
+      )}
+      {editing && (
+        <div>
+          <label className="label mb-1.5 block" htmlFor="dir-status">
+            Status <span className="text-danger">*</span>
+          </label>
+          <select
+            id="dir-status"
+            className="input-field w-full"
+            value={form.status}
+            onChange={(e) => {
+              const status = e.target.value
+              const selected = companies.find((c) => String(c.id) === form.company_id)
+              setForm((f) => ({
+                ...f,
+                status,
+                blacklist_company_name:
+                  status === 'blacklisted' && selected ? selected.name : f.blacklist_company_name,
+              }))
+            }}
+          >
+            <option value="active">Active (not blacklisted)</option>
+            <option value="blacklisted">Blacklisted</option>
+          </select>
+        </div>
+      )}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="label mb-1.5 block" htmlFor="dir-id-type">
@@ -236,6 +282,7 @@ function DirectorFormFields({ form, setForm, formError, companySuggestions, onNi
 export default function DirectorsTable({ refreshKey, variant = 'registry' }) {
   const isBlacklistPage = variant === 'blacklist'
   const [directors, setDirectors] = useState([])
+  const [companies, setCompanies] = useState([])
   const [blacklistedCompanies, setBlacklistedCompanies] = useState([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState({})
@@ -294,12 +341,14 @@ export default function DirectorsTable({ refreshKey, variant = 'registry' }) {
     setLoading(true)
     try {
       const apiStatus = statusFilter === 'all' ? undefined : statusFilter
-      const [dirRes, coRes] = await Promise.all([
+      const [dirRes, coRes, companyRes] = await Promise.all([
         getDirectors(apiStatus),
         getBlacklistedCompanies().catch(() => ({ data: [] })),
+        getCompanies().catch(() => ({ data: [] })),
       ])
       setDirectors(dirRes.data)
       setBlacklistedCompanies(coRes.data)
+      setCompanies(companyRes.data)
     } finally {
       setLoading(false)
     }
@@ -333,7 +382,9 @@ export default function DirectorsTable({ refreshKey, variant = 'registry' }) {
     setEditing(null)
     setForm({
       ...emptyForm,
-      status: isBlacklistPage ? 'blacklisted' : 'active',
+      company_id: companies.length === 1 ? String(companies[0].id) : '',
+      blacklist_company_name: '',
+      status: 'active',
     })
     setCompanySuggestions([])
     setFormError('')
@@ -358,6 +409,7 @@ export default function DirectorsTable({ refreshKey, variant = 'registry' }) {
   }
 
   const validateForm = () => {
+    if (!editing && !form.company_id) return 'Please select a company for this director.'
     if (!form.full_name.trim()) return 'Full name is required.'
     if (form.nic_passport.trim() && !form.id_type) {
       return 'Please select ID type (NIC or Passport) for the ID number you entered.'
@@ -383,6 +435,7 @@ export default function DirectorsTable({ refreshKey, variant = 'registry' }) {
     try {
       const payload = formToPayload(form)
       if (editing) {
+        delete payload.company_id
         await updateDirector(editing.id, payload)
       } else {
         await createDirector(payload)
@@ -470,6 +523,8 @@ export default function DirectorsTable({ refreshKey, variant = 'registry' }) {
             form={form}
             setForm={setForm}
             formError={formError}
+            companies={companies}
+            editing={editing}
             companySuggestions={companySuggestions}
             onNicBlur={() => loadCompanySuggestions(form.nic_passport)}
           />
@@ -508,7 +563,7 @@ export default function DirectorsTable({ refreshKey, variant = 'registry' }) {
             {filterBtn('blacklisted', 'Blacklisted')}
             {!isBlacklistPage && filterBtn('active', 'Not blacklisted')}
           </div>
-          <button type="button" onClick={openCreate} className="btn-primary shrink-0 gap-2 lg:ml-auto">
+          <button type="button" onClick={openCreate} disabled={companies.length === 0} className="btn-primary shrink-0 gap-2 lg:ml-auto disabled:opacity-40">
             <Plus className="h-4 w-4" />
             Add director
           </button>
@@ -518,8 +573,13 @@ export default function DirectorsTable({ refreshKey, variant = 'registry' }) {
           One record per person. Matched by <strong className="text-ink-600">NIC / Passport</strong> when available,
           or by <strong className="text-ink-600">full name + email</strong> as a fallback. IDs can be added to a
           director's record at any time. Set status to <strong className="text-ink-600">Blacklisted</strong> to
-          include them on the Blacklist page and block their company on PDF upload.
+          include them on the Blacklist page and block their company on PDF upload. Manual directors must be linked to a company first.
         </p>
+        {companies.length === 0 && !isBlacklistPage && (
+          <p className="rounded-sm border border-gold/30 bg-gold/8 px-4 py-3 text-sm text-ink-600 font-body">
+            Add a company on the Companies page before adding directors manually.
+          </p>
+        )}
 
         {isBlacklistPage && blacklistedCompanies.length > 0 && (
           <div className="rounded-sm border border-danger/20 bg-danger-muted/30 px-4 py-3">

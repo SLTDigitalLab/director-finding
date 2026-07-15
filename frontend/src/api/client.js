@@ -36,6 +36,7 @@ export const saveExtraction = (payload) => api.post('/save-extraction', payload)
 export const getCompanies = () => api.get('/companies')
 export const getDirectors = (status) =>
   api.get('/directors', { params: status && status !== 'all' ? { status } : {} })
+export const createCompany = (payload) => api.post('/companies', payload)
 export const createDirector = (payload) => api.post('/directors', payload)
 export const updateCompany = (id, payload) => api.patch(`/companies/${id}`, payload)
 

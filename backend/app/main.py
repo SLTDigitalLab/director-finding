@@ -684,6 +684,14 @@ def list_companies(
     return crud.get_all_companies_with_directors(db)
 
 
+@app.post("/api/companies", response_model=schemas.CompanyWithDirectors, status_code=201)
+def create_company(body: schemas.CompanyCreate, db: Session = Depends(get_db)):
+    try:
+        return crud.create_company(db, body.model_dump())
+    except crud.ConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
 @app.patch("/api/companies/{company_id}", response_model=schemas.CompanyWithDirectors)
 def patch_company(
     company_id: int,
