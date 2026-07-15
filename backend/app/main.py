@@ -9,6 +9,7 @@ import shutil, os, base64, httpx, json
 from urllib.parse import urlencode
 
 from . import models, schemas, crud
+from .auth import get_current_user
 from .database import SessionLocal, engine
 
 models.Base.metadata.create_all(bind=engine)
@@ -33,25 +34,51 @@ def _ensure_schema():
         # directors
         if insp.has_table("directors"):
             if not has_col("directors", "id_type"):
-                conn.execute(text('ALTER TABLE directors ADD COLUMN id_type VARCHAR NULL'))
+                conn.execute(
+                    text("ALTER TABLE directors ADD COLUMN id_type VARCHAR NULL")
+                )
             if not has_col("directors", "id_country"):
-                conn.execute(text('ALTER TABLE directors ADD COLUMN id_country VARCHAR NULL'))
+                conn.execute(
+                    text("ALTER TABLE directors ADD COLUMN id_country VARCHAR NULL")
+                )
             if not has_col("directors", "is_blacklisted"):
-                conn.execute(text(
-                    'ALTER TABLE directors ADD COLUMN is_blacklisted BOOLEAN NOT NULL DEFAULT FALSE'
-                ))
+                conn.execute(
+                    text(
+                        "ALTER TABLE directors ADD COLUMN is_blacklisted BOOLEAN NOT NULL DEFAULT FALSE"
+                    )
+                )
             if not has_col("directors", "blacklist_company_name"):
-                conn.execute(text('ALTER TABLE directors ADD COLUMN blacklist_company_name VARCHAR NULL'))
+                conn.execute(
+                    text(
+                        "ALTER TABLE directors ADD COLUMN blacklist_company_name VARCHAR NULL"
+                    )
+                )
             if not has_col("directors", "blacklist_reason"):
-                conn.execute(text('ALTER TABLE directors ADD COLUMN blacklist_reason VARCHAR NULL'))
+                conn.execute(
+                    text(
+                        "ALTER TABLE directors ADD COLUMN blacklist_reason VARCHAR NULL"
+                    )
+                )
             if not has_col("directors", "blacklist_notes"):
-                conn.execute(text('ALTER TABLE directors ADD COLUMN blacklist_notes VARCHAR NULL'))
+                conn.execute(
+                    text(
+                        "ALTER TABLE directors ADD COLUMN blacklist_notes VARCHAR NULL"
+                    )
+                )
             if not has_col("directors", "blacklist_auto"):
-                conn.execute(text('ALTER TABLE directors ADD COLUMN blacklist_auto BOOLEAN NOT NULL DEFAULT FALSE'))
+                conn.execute(
+                    text(
+                        "ALTER TABLE directors ADD COLUMN blacklist_auto BOOLEAN NOT NULL DEFAULT FALSE"
+                    )
+                )
 
         if insp.has_table("blacklisted_companies"):
             if not has_col("blacklisted_companies", "is_explicit"):
-                conn.execute(text('ALTER TABLE blacklisted_companies ADD COLUMN is_explicit BOOLEAN NOT NULL DEFAULT FALSE'))
+                conn.execute(
+                    text(
+                        "ALTER TABLE blacklisted_companies ADD COLUMN is_explicit BOOLEAN NOT NULL DEFAULT FALSE"
+                    )
+                )
         else:
             models.BlacklistedCompany.__table__.create(bind=conn, checkfirst=True)
 
@@ -65,12 +92,16 @@ def _migrate_legacy_blacklist_table():
         return
     db = SessionLocal()
     try:
-        rows = db.execute(
-            text(
-                "SELECT full_name, nic_passport, company_name, id_type, id_country, "
-                "address, reason, notes FROM blacklisted_directors"
+        rows = (
+            db.execute(
+                text(
+                    "SELECT full_name, nic_passport, company_name, id_type, id_country, "
+                    "address, reason, notes FROM blacklisted_directors"
+                )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         for row in rows:
             nic = row["nic_passport"]
             director = crud.find_director_by_nic(db, nic)
@@ -97,7 +128,9 @@ def _migrate_legacy_blacklist_table():
                         id_country=row["id_country"],
                         residential_address=row["address"],
                         is_blacklisted=True,
-                        blacklist_company_name=crud.normalize_company_name(row["company_name"]),
+                        blacklist_company_name=crud.normalize_company_name(
+                            row["company_name"]
+                        ),
                         blacklist_reason=row["reason"],
                         blacklist_notes=row["notes"],
                     )
@@ -166,7 +199,8 @@ def build_extraction_preview(db: Session, data: dict) -> schemas.ExtractionPrevi
         name_changed = bool(
             d_model
             and registry_name
-            and _normalize_person_name(pdf_name) != _normalize_person_name(registry_name)
+            and _normalize_person_name(pdf_name)
+            != _normalize_person_name(registry_name)
         )
 
         # Check blacklist: via NIC when available, else via the matched director record
@@ -190,8 +224,12 @@ def build_extraction_preview(db: Session, data: dict) -> schemas.ExtractionPrevi
                 name_changed=name_changed,
                 missing_nic=missing_nic,
                 is_blacklisted=blacklist_hit is not None,
-                blacklist_reason=blacklist_hit.blacklist_reason if blacklist_hit else None,
-                blacklist_company_name=blacklist_hit.blacklist_company_name if blacklist_hit else None,
+                blacklist_reason=blacklist_hit.blacklist_reason
+                if blacklist_hit
+                else None,
+                blacklist_company_name=blacklist_hit.blacklist_company_name
+                if blacklist_hit
+                else None,
                 other_companies=other,
             )
         )
@@ -205,9 +243,7 @@ def build_extraction_preview(db: Session, data: dict) -> schemas.ExtractionPrevi
 
     blacklist_note = ""
     if blacklisted_count:
-        blacklist_note += (
-            f" Warning: {blacklisted_count} director(s) match the supervisor blacklist (by NIC/passport)."
-        )
+        blacklist_note += f" Warning: {blacklisted_count} director(s) match the supervisor blacklist (by NIC/passport)."
     if company_is_blacklisted:
         blacklist_note += " This company is blacklisted."
 
@@ -222,8 +258,7 @@ def build_extraction_preview(db: Session, data: dict) -> schemas.ExtractionPrevi
         message = (
             f"{len(pdf_rows)} director(s) from the PDF. "
             "Directors are matched by NIC/passport when available, or by full name + email as a fallback. "
-            "IDs can be added to a director's record later."
-            + blacklist_note
+            "IDs can be added to a director's record later." + blacklist_note
         )
 
     return schemas.ExtractionPreview(
@@ -239,6 +274,7 @@ def build_extraction_preview(db: Session, data: dict) -> schemas.ExtractionPrevi
         message=message,
     )
 
+
 app = FastAPI(title="Company Director Registry API")
 
 app.add_middleware(
@@ -251,6 +287,7 @@ app.add_middleware(
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 
 def get_db():
     db = SessionLocal()
@@ -370,8 +407,7 @@ def _is_incomplete_extraction(data: dict) -> bool:
     if not isinstance(directors, list) or len(directors) == 0:
         return True
     has_any_named_director = any(
-        isinstance(d, dict) and str(d.get("full_name") or "").strip()
-        for d in directors
+        isinstance(d, dict) and str(d.get("full_name") or "").strip() for d in directors
     )
     return not has_any_named_director
 
@@ -407,7 +443,9 @@ def _text_from_openai_response(body: dict) -> str:
     )
 
 
-async def _extract_with_openai(pdf_b64: str, api_key: str, prompt: str = PDF_EXTRACTION_PROMPT) -> dict:
+async def _extract_with_openai(
+    pdf_b64: str, api_key: str, prompt: str = PDF_EXTRACTION_PROMPT
+) -> dict:
     """PDF extraction via OpenAI Responses API (gpt-4o and later)."""
     model = (os.getenv("OPENAI_MODEL") or "gpt-4o").strip()
     url = "https://api.openai.com/v1/responses"
@@ -444,7 +482,9 @@ async def _extract_with_openai(pdf_b64: str, api_key: str, prompt: str = PDF_EXT
     return _parse_llm_json_text(_text_from_openai_response(response.json()))
 
 
-async def _extract_with_gemini(pdf_b64: str, api_key: str, prompt: str = PDF_EXTRACTION_PROMPT) -> dict:
+async def _extract_with_gemini(
+    pdf_b64: str, api_key: str, prompt: str = PDF_EXTRACTION_PROMPT
+) -> dict:
     model = (os.getenv("GEMINI_MODEL") or "gemini-2.5-flash").strip()
     req_url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
@@ -513,7 +553,9 @@ async def extract_company_data_from_pdf(file_path: str) -> dict:
         )
 
     openai_key = (os.getenv("OPENAI_API_KEY") or "").strip()
-    gemini_key = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
+    gemini_key = (
+        os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
+    ).strip()
 
     providers_order: list[str] = [provider]
     if provider == "openai" and gemini_key:
@@ -572,7 +614,11 @@ async def extract_company_data_from_pdf(file_path: str) -> dict:
 
 
 @app.post("/api/extract-pdf", response_model=schemas.ExtractPdfResponse)
-async def extract_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def extract_pdf(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
 
@@ -596,7 +642,11 @@ async def extract_pdf(file: UploadFile = File(...), db: Session = Depends(get_db
 
 
 @app.post("/api/save-extraction", response_model=schemas.UploadResult)
-def save_extraction(payload: schemas.ExtractionPayload, db: Session = Depends(get_db)):
+def save_extraction(
+    payload: schemas.ExtractionPayload,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     data = payload.model_dump()
     if data.get("directors") is None:
         data["directors"] = []
@@ -604,14 +654,17 @@ def save_extraction(payload: schemas.ExtractionPayload, db: Session = Depends(ge
     directors_created = []
     try:
         for d in data.get("directors", []):
-            director = crud.get_or_create_director(db, d, company_name_hint=company.name)
+            director = crud.get_or_create_director(
+                db, d, company_name_hint=company.name
+            )
             crud.link_director_to_company(db, director.id, company.id)
             if director.is_blacklisted:
                 crud.ensure_blacklisted_company(
                     db,
                     company.name,
-                    director.blacklist_reason or f"Associated with blacklisted director {director.full_name}",
-                    is_explicit=False
+                    director.blacklist_reason
+                    or f"Associated with blacklisted director {director.full_name}",
+                    is_explicit=False,
                 )
             directors_created.append(schemas.Director.model_validate(director))
     except crud.ConflictError as e:
@@ -625,7 +678,9 @@ def save_extraction(payload: schemas.ExtractionPayload, db: Session = Depends(ge
 
 
 @app.get("/api/companies", response_model=list[schemas.CompanyWithDirectors])
-def list_companies(db: Session = Depends(get_db)):
+def list_companies(
+    db: Session = Depends(get_db), user: dict = Depends(get_current_user)
+):
     return crud.get_all_companies_with_directors(db)
 
 
@@ -634,6 +689,7 @@ def patch_company(
     company_id: int,
     body: schemas.CompanyUpdate,
     db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     updates = body.model_dump(exclude_unset=True)
     try:
@@ -649,16 +705,28 @@ def patch_company(
 
 
 @app.get("/api/directors", response_model=list[schemas.DirectorWithCompanies])
-def list_directors(status: str | None = None, db: Session = Depends(get_db)):
+def list_directors(
+    status: str | None = None,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     """List directors. Optional status: all (default), blacklisted, active."""
     if status and status not in ("all", "blacklisted", "active"):
-        raise HTTPException(status_code=400, detail="status must be all, blacklisted, or active")
+        raise HTTPException(
+            status_code=400, detail="status must be all, blacklisted, or active"
+        )
     filter_status = None if not status or status == "all" else status
     return crud.get_all_directors_with_companies(db, filter_status)
 
 
-@app.post("/api/directors", response_model=schemas.DirectorWithCompanies, status_code=201)
-def create_director(body: schemas.DirectorCreate, db: Session = Depends(get_db)):
+@app.post(
+    "/api/directors", response_model=schemas.DirectorWithCompanies, status_code=201
+)
+def create_director(
+    body: schemas.DirectorCreate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     try:
         return crud.create_director(db, body.model_dump())
     except crud.ConflictError as e:
@@ -670,6 +738,7 @@ def patch_director(
     director_id: int,
     body: schemas.DirectorUpdate,
     db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     updates = body.model_dump(exclude_unset=True)
     try:
@@ -685,42 +754,66 @@ def patch_director(
 
 
 @app.delete("/api/companies/{company_id}")
-def delete_company(company_id: int, db: Session = Depends(get_db)):
+def delete_company(
+    company_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     crud.delete_company(db, company_id)
     return {"message": "Company deleted."}
 
 
 @app.delete("/api/directors/{director_id}")
-def delete_director(director_id: int, db: Session = Depends(get_db)):
+def delete_director(
+    director_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     crud.delete_director(db, director_id)
     return {"message": "Director deleted."}
 
 
 @app.delete("/api/companies/{company_id}/directors/{director_id}")
-def unlink_director(company_id: int, director_id: int, db: Session = Depends(get_db)):
+def unlink_director(
+    company_id: int,
+    director_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     success = crud.unlink_director_from_company(db, company_id, director_id)
     if not success:
-        raise HTTPException(status_code=404, detail="Company or director not found, or they are not linked.")
+        raise HTTPException(
+            status_code=404,
+            detail="Company or director not found, or they are not linked.",
+        )
     return {"message": "Director unlinked from company."}
 
 
 @app.get("/api/blacklist/companies", response_model=list[schemas.BlacklistedCompany])
-def list_blacklisted_companies(db: Session = Depends(get_db)):
+def list_blacklisted_companies(
+    db: Session = Depends(get_db), user: dict = Depends(get_current_user)
+):
     return crud.get_all_blacklisted_companies(db)
 
 
 @app.get("/api/blacklist/suggest-companies")
-def suggest_companies_for_nic(nic: str, db: Session = Depends(get_db)):
+def suggest_companies_for_nic(
+    nic: str, db: Session = Depends(get_db), user: dict = Depends(get_current_user)
+):
     """Registry companies linked to this NIC (helps fill the form)."""
     names = crud.get_registry_companies_for_nic(db, nic)
     return {"companies": names}
 
 
-@app.patch("/api/directors/{director_id}/blacklist", response_model=schemas.DirectorWithCompanies)
+@app.patch(
+    "/api/directors/{director_id}/blacklist",
+    response_model=schemas.DirectorWithCompanies,
+)
 def blacklist_director_endpoint(
     director_id: int,
     body: schemas.BlacklistRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     director = crud.blacklist_director(db, director_id, body.reason, body.notes)
     if not director:
@@ -728,10 +821,14 @@ def blacklist_director_endpoint(
     return director
 
 
-@app.patch("/api/directors/{director_id}/unblacklist", response_model=schemas.DirectorWithCompanies)
+@app.patch(
+    "/api/directors/{director_id}/unblacklist",
+    response_model=schemas.DirectorWithCompanies,
+)
 def unblacklist_director_endpoint(
     director_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     try:
         director = crud.unblacklist_director(db, director_id)
@@ -742,11 +839,14 @@ def unblacklist_director_endpoint(
     return director
 
 
-@app.patch("/api/companies/{company_id}/blacklist", response_model=schemas.CompanyWithDirectors)
+@app.patch(
+    "/api/companies/{company_id}/blacklist", response_model=schemas.CompanyWithDirectors
+)
 def blacklist_company_endpoint(
     company_id: int,
     body: schemas.BlacklistRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     company = crud.blacklist_company(db, company_id, body.reason, body.notes)
     if not company:
@@ -754,41 +854,53 @@ def blacklist_company_endpoint(
     return company
 
 
-@app.patch("/api/companies/{company_id}/unblacklist", response_model=schemas.CompanyUnblacklistResponse)
+@app.patch(
+    "/api/companies/{company_id}/unblacklist",
+    response_model=schemas.CompanyUnblacklistResponse,
+)
 def unblacklist_company_endpoint(
     company_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     # First check if company_id matches a company in the registry
     company = crud.get_company_with_directors(db, company_id)
     if company:
         updated_company = crud.unblacklist_company(db, company_id)
         if not updated_company:
-            raise HTTPException(status_code=400, detail="Company is not explicitly blacklisted.")
+            raise HTTPException(
+                status_code=400, detail="Company is not explicitly blacklisted."
+            )
         return schemas.CompanyUnblacklistResponse(
             message="Company unblacklisted.",
-            company=schemas.CompanyWithDirectors.model_validate(updated_company)
+            company=schemas.CompanyWithDirectors.model_validate(updated_company),
         )
-    
+
     # If not found in registry, check if company_id matches blacklisted_companies.id
-    bc = db.query(models.BlacklistedCompany).filter(models.BlacklistedCompany.id == company_id).first()
+    bc = (
+        db.query(models.BlacklistedCompany)
+        .filter(models.BlacklistedCompany.id == company_id)
+        .first()
+    )
     if bc and bc.is_explicit:
         db.delete(bc)
         db.commit()
         return schemas.CompanyUnblacklistResponse(
-            message="Company unblacklisted.",
-            company=None
+            message="Company unblacklisted.", company=None
         )
-        
-    raise HTTPException(status_code=404, detail="Company not found in registry or blacklist.")
+
+    raise HTTPException(
+        status_code=404, detail="Company not found in registry or blacklist."
+    )
 
 
 @app.get("/api/blacklist/directors", response_model=list[schemas.DirectorWithCompanies])
-def list_blacklisted_directors(db: Session = Depends(get_db)):
+def list_blacklisted_directors(
+    db: Session = Depends(get_db), user: dict = Depends(get_current_user)
+):
     return crud.get_all_directors_with_companies(db, status="blacklisted")
 
 
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
-
