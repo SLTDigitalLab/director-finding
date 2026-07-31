@@ -9,7 +9,6 @@ import shutil, os, base64, httpx, json
 from urllib.parse import urlencode
 
 from . import models, schemas, crud
-from .auth import get_current_user
 from .database import SessionLocal, engine
 
 models.Base.metadata.create_all(bind=engine)
@@ -617,7 +616,6 @@ async def extract_company_data_from_pdf(file_path: str) -> dict:
 async def extract_pdf(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
@@ -645,7 +643,6 @@ async def extract_pdf(
 def save_extraction(
     payload: schemas.ExtractionPayload,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     data = payload.model_dump()
     if data.get("directors") is None:
@@ -678,13 +675,13 @@ def save_extraction(
 
 
 @app.get("/api/companies", response_model=list[schemas.CompanyWithDirectors])
-def list_companies(
-    db: Session = Depends(get_db), user: dict = Depends(get_current_user)
-):
+def list_companies(db: Session = Depends(get_db)):
     return crud.get_all_companies_with_directors(db)
 
 
-@app.post("/api/companies", response_model=schemas.CompanyWithDirectors, status_code=201)
+@app.post(
+    "/api/companies", response_model=schemas.CompanyWithDirectors, status_code=201
+)
 def create_company(body: schemas.CompanyCreate, db: Session = Depends(get_db)):
     try:
         return crud.create_company(db, body.model_dump())
@@ -697,7 +694,6 @@ def patch_company(
     company_id: int,
     body: schemas.CompanyUpdate,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     updates = body.model_dump(exclude_unset=True)
     try:
@@ -716,7 +712,6 @@ def patch_company(
 def list_directors(
     status: str | None = None,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     """List directors. Optional status: all (default), blacklisted, active."""
     if status and status not in ("all", "blacklisted", "active"):
@@ -733,7 +728,6 @@ def list_directors(
 def create_director(
     body: schemas.DirectorCreate,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     try:
         return crud.create_director(db, body.model_dump())
@@ -746,7 +740,6 @@ def patch_director(
     director_id: int,
     body: schemas.DirectorUpdate,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     updates = body.model_dump(exclude_unset=True)
     try:
@@ -765,7 +758,6 @@ def patch_director(
 def delete_company(
     company_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     crud.delete_company(db, company_id)
     return {"message": "Company deleted."}
@@ -775,7 +767,6 @@ def delete_company(
 def delete_director(
     director_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     crud.delete_director(db, director_id)
     return {"message": "Director deleted."}
@@ -786,7 +777,6 @@ def unlink_director(
     company_id: int,
     director_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     success = crud.unlink_director_from_company(db, company_id, director_id)
     if not success:
@@ -798,16 +788,12 @@ def unlink_director(
 
 
 @app.get("/api/blacklist/companies", response_model=list[schemas.BlacklistedCompany])
-def list_blacklisted_companies(
-    db: Session = Depends(get_db), user: dict = Depends(get_current_user)
-):
+def list_blacklisted_companies(db: Session = Depends(get_db)):
     return crud.get_all_blacklisted_companies(db)
 
 
 @app.get("/api/blacklist/suggest-companies")
-def suggest_companies_for_nic(
-    nic: str, db: Session = Depends(get_db), user: dict = Depends(get_current_user)
-):
+def suggest_companies_for_nic(nic: str, db: Session = Depends(get_db)):
     """Registry companies linked to this NIC (helps fill the form)."""
     names = crud.get_registry_companies_for_nic(db, nic)
     return {"companies": names}
@@ -821,7 +807,6 @@ def blacklist_director_endpoint(
     director_id: int,
     body: schemas.BlacklistRequest,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     director = crud.blacklist_director(db, director_id, body.reason, body.notes)
     if not director:
@@ -836,7 +821,6 @@ def blacklist_director_endpoint(
 def unblacklist_director_endpoint(
     director_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     try:
         director = crud.unblacklist_director(db, director_id)
@@ -854,7 +838,6 @@ def blacklist_company_endpoint(
     company_id: int,
     body: schemas.BlacklistRequest,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     company = crud.blacklist_company(db, company_id, body.reason, body.notes)
     if not company:
@@ -869,7 +852,6 @@ def blacklist_company_endpoint(
 def unblacklist_company_endpoint(
     company_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     # First check if company_id matches a company in the registry
     company = crud.get_company_with_directors(db, company_id)
@@ -903,9 +885,7 @@ def unblacklist_company_endpoint(
 
 
 @app.get("/api/blacklist/directors", response_model=list[schemas.DirectorWithCompanies])
-def list_blacklisted_directors(
-    db: Session = Depends(get_db), user: dict = Depends(get_current_user)
-):
+def list_blacklisted_directors(db: Session = Depends(get_db)):
     return crud.get_all_directors_with_companies(db, status="blacklisted")
 
 
