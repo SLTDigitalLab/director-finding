@@ -24,8 +24,6 @@ services:
       - ./backend/.env
     environment:
       DATABASE_URL: postgresql://postgres:password@db:5432/director_finding
-      AZURE_TENANT_ID: ${VITE_AZURE_TENANT_ID}
-      AZURE_CLIENT_ID: ${VITE_AZURE_CLIENT_ID}
     depends_on:
       db:
         condition: service_healthy
