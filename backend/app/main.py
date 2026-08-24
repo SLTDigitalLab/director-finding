@@ -81,6 +81,31 @@ def _ensure_schema():
         else:
             models.BlacklistedCompany.__table__.create(bind=conn, checkfirst=True)
 
+        # companies - add whitelist fields
+        if insp.has_table("companies"):
+            if not has_col("companies", "is_whitelisted"):
+                conn.execute(
+                    text(
+                        "ALTER TABLE companies ADD COLUMN is_whitelisted BOOLEAN NOT NULL DEFAULT FALSE"
+                    )
+                )
+            if not has_col("companies", "whitelist_reason"):
+                conn.execute(
+                    text(
+                        "ALTER TABLE companies ADD COLUMN whitelist_reason VARCHAR NULL"
+                    )
+                )
+            if not has_col("companies", "whitelist_notes"):
+                conn.execute(
+                    text(
+                        "ALTER TABLE companies ADD COLUMN whitelist_notes VARCHAR NULL"
+                    )
+                )
+
+        # related_companies table
+        if not insp.has_table("related_companies"):
+            models.RelatedCompany.__table__.create(bind=conn, checkfirst=True)
+
     _migrate_legacy_blacklist_table()
 
 
@@ -882,6 +907,104 @@ def unblacklist_company_endpoint(
     raise HTTPException(
         status_code=404, detail="Company not found in registry or blacklist."
     )
+
+
+@app.get(
+    "/api/blacklist/related-companies", response_model=list[schemas.RelatedCompany]
+)
+def list_related_companies(db: Session = Depends(get_db)):
+    """Get all highlighted related companies with their shared blacklisted directors."""
+    return crud.get_related_companies(db)
+
+
+@app.post("/api/validate-form20", response_model=schemas.Form20ValidationResult)
+def validate_form20_directors(
+    payload: schemas.Form20ValidationRequest,
+    db: Session = Depends(get_db),
+):
+    """Validate Form 1/20 directors against blacklist. Returns warnings only."""
+    return crud.validate_form20_directors(db, payload.company_name, payload.directors)
+
+
+# Phase 2: Whitelist & Related Company Actions
+@app.patch(
+    "/api/companies/{company_id}/whitelist", response_model=schemas.CompanyWithDirectors
+)
+def whitelist_company_endpoint(
+    company_id: int,
+    body: schemas.BlacklistRequest,
+    db: Session = Depends(get_db),
+):
+    """Whitelist a company. Updates related companies status to whitelisted."""
+    company = crud.whitelist_company(db, company_id, body.reason, body.notes)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+    return company
+
+
+@app.patch(
+    "/api/companies/{company_id}/unwhitelist",
+    response_model=schemas.CompanyWithDirectors,
+)
+def unwhitelist_company_endpoint(
+    company_id: int,
+    db: Session = Depends(get_db),
+):
+    """Remove whitelist status from a company."""
+    company = crud.unwhitelist_company(db, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+    return company
+
+
+@app.patch(
+    "/api/related-companies/{related_id}/blacklist",
+    response_model=schemas.RelatedCompany,
+)
+def blacklist_related_company_endpoint(
+    related_id: int,
+    db: Session = Depends(get_db),
+):
+    """Blacklist a related company."""
+    rc = crud.blacklist_related_company(db, related_id)
+    if not rc:
+        raise HTTPException(status_code=404, detail="Related company not found.")
+    return rc
+
+
+@app.patch(
+    "/api/related-companies/{related_id}/whitelist",
+    response_model=schemas.RelatedCompany,
+)
+def whitelist_related_company_endpoint(
+    related_id: int,
+    db: Session = Depends(get_db),
+):
+    """Whitelist a related company."""
+    rc = crud.whitelist_related_company(db, related_id)
+    if not rc:
+        raise HTTPException(status_code=404, detail="Related company not found.")
+    return rc
+
+
+@app.patch(
+    "/api/related-companies/{related_id}/dismiss", response_model=schemas.RelatedCompany
+)
+def dismiss_related_company_endpoint(
+    related_id: int,
+    db: Session = Depends(get_db),
+):
+    """Dismiss a related company."""
+    rc = crud.dismiss_related_company(db, related_id)
+    if not rc:
+        raise HTTPException(status_code=404, detail="Related company not found.")
+    return rc
+
+
+@app.get("/api/whitelist/companies", response_model=list[schemas.CompanyWithDirectors])
+def list_whitelisted_companies(db: Session = Depends(get_db)):
+    """Get all whitelisted companies."""
+    return crud.get_whitelisted_companies(db)
 
 
 @app.get("/api/blacklist/directors", response_model=list[schemas.DirectorWithCompanies])

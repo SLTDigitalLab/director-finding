@@ -58,3 +58,15 @@ export const blacklistCompany = (id, payload) => api.patch(`/companies/${id}/bla
 export const unblacklistCompany = (id) => api.patch(`/companies/${id}/unblacklist`)
 export const getBlacklistedDirectors = () => api.get('/blacklist/directors')
 
+// New endpoints for company-first blacklist flow
+export const getRelatedCompanies = () => api.get('/blacklist/related-companies')
+export const validateForm20 = (payload) => api.post('/validate-form20', payload)
+
+// Phase 2: Whitelist & Related Company Actions
+export const whitelistCompany = (id, payload) => api.patch(`/companies/${id}/whitelist`, payload)
+export const unwhitelistCompany = (id) => api.patch(`/companies/${id}/unwhitelist`)
+export const blacklistRelatedCompany = (relatedId) => api.patch(`/related-companies/${relatedId}/blacklist`)
+export const whitelistRelatedCompany = (relatedId) => api.patch(`/related-companies/${relatedId}/whitelist`)
+export const dismissRelatedCompany = (relatedId) => api.patch(`/related-companies/${relatedId}/dismiss`)
+export const getWhitelistedCompanies = () => api.get('/whitelist/companies')
+

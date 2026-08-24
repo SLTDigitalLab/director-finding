@@ -18,6 +18,7 @@ class DirectorBase(BaseModel):
 
 class DirectorCreate(DirectorBase):
     """Create a director manually (registry or blacklist)."""
+
     company_id: int
 
 
@@ -49,18 +50,8 @@ class CompanyBase(BaseModel):
     name_approval_number: Optional[str] = None
 
 
-class Company(CompanyBase):
-    id: int
-    is_blacklisted: bool = False
-    blacklist_reason: Optional[str] = None
-    blacklist_notes: Optional[str] = None
-    is_explicit: bool = False
-    model_config = {"from_attributes": True}
-
-
 class CompanyCreate(CompanyBase):
     """Create a company manually before linking directors."""
-
 
 
 class CompanyUpdate(BaseModel):
@@ -70,6 +61,18 @@ class CompanyUpdate(BaseModel):
     company_type: Optional[str] = None
     registered_address: Optional[str] = None
     name_approval_number: Optional[str] = None
+
+
+class Company(CompanyBase):
+    id: int
+    is_blacklisted: bool = False
+    blacklist_reason: Optional[str] = None
+    blacklist_notes: Optional[str] = None
+    is_explicit: bool = False
+    is_whitelisted: bool = False
+    whitelist_reason: Optional[str] = None
+    whitelist_notes: Optional[str] = None
+    model_config = {"from_attributes": True}
 
 
 class CompanyWithDirectors(Company):
@@ -120,7 +123,6 @@ class BlacklistRequest(BaseModel):
     notes: Optional[str] = None
 
 
-
 class DirectorPreview(DirectorBase):
     source: Literal["pdf", "registry"]
     id: Optional[int] = None
@@ -164,3 +166,25 @@ class CompanyUnblacklistResponse(BaseModel):
     message: str
     company: Optional[CompanyWithDirectors] = None
 
+
+class RelatedCompany(BaseModel):
+    id: int
+    company_name: str
+    source_company_name: str
+    shared_directors: list[Director] = []
+    status: str
+    created_at: Optional[str] = None
+    model_config = {"from_attributes": True}
+
+
+class Form20ValidationRequest(BaseModel):
+    company_name: str
+    directors: list[DirectorBase]
+
+
+class Form20ValidationResult(BaseModel):
+    company_name: str
+    total_directors: int
+    blacklisted_directors: list[dict]
+    warning_count: int
+    message: str

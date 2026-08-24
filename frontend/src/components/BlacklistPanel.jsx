@@ -1,17 +1,20 @@
 import { useState, useEffect } from 'react'
-import { ShieldAlert, Building2, User, RefreshCw } from 'lucide-react'
+import { ShieldAlert, Building2, User, RefreshCw, AlertTriangle } from 'lucide-react'
 import {
   getBlacklistedDirectors,
   getBlacklistedCompanies,
   unblacklistDirector,
   unblacklistCompany,
+  getRelatedCompanies,
 } from '../api/client'
 
 export default function BlacklistPanel() {
   const [directors, setDirectors] = useState([])
   const [companies, setCompanies] = useState([])
+  const [relatedCompanies, setRelatedCompanies] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [relatedLoading, setRelatedLoading] = useState(false)
 
   const loadData = async () => {
     try {
@@ -26,14 +29,34 @@ export default function BlacklistPanel() {
     }
   }
 
+  const loadRelatedCompanies = async () => {
+    try {
+      setRelatedLoading(true)
+      const res = await getRelatedCompanies()
+      setRelatedCompanies(res.data)
+    } catch (err) {
+      console.error('Could not load related companies', err)
+    } finally {
+      setRelatedLoading(false)
+    }
+  }
+
   useEffect(() => {
     setLoading(true)
     loadData().finally(() => setLoading(false))
+    loadRelatedCompanies()
+  }, [])
+
+  // Poll for related companies every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(loadRelatedCompanies, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   const handleRefresh = async () => {
     setRefreshing(true)
     await loadData()
+    await loadRelatedCompanies()
     setRefreshing(false)
   }
 
@@ -226,6 +249,88 @@ export default function BlacklistPanel() {
                         Managed by Director
                       </span>
                     )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Related Companies Section */}
+        <section className="space-y-4 md:col-span-2">
+          <div className="flex items-center justify-between border-b border-ink-100 pb-2">
+            <h3 className="font-display text-lg font-bold text-ink flex items-center gap-2">
+              <AlertTriangle className="h-4.5 w-4.5 text-gold-dark" />
+              Related Companies ({relatedCompanies.length})
+            </h3>
+            {relatedLoading && (
+              <RefreshCw className="h-4 w-4 animate-spin text-gold" />
+            )}
+          </div>
+
+          {relatedCompanies.length === 0 ? (
+            <div className="empty-panel py-12">
+              <AlertTriangle className="mb-4 h-10 w-10 text-ink-200" />
+              <p className="font-body text-sm font-medium text-ink-600">No related companies highlighted</p>
+              <p className="mt-1 max-w-xs text-xs text-ink-400">Companies sharing directors with blacklisted companies will appear here.</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              {relatedCompanies.map((rc) => (
+                <div
+                  key={rc.id}
+                  className="border border-gold/30 bg-gold/5 p-4 shadow-[0_1px_2px_rgba(15,17,23,0.03)] hover:shadow-panel transition-all duration-200 rounded-sm"
+                >
+                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                    <div className="min-w-0 space-y-1 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-body text-sm font-bold text-ink leading-snug">{rc.company_name}</p>
+                        <span className="inline-flex rounded-sm bg-gold/15 border border-gold/30 px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase tracking-wider text-gold-dark">
+                          Highlighted
+                        </span>
+                      </div>
+                      <p className="text-xs text-ink-500 font-body">
+                        <strong>Source:</strong> {rc.source_company_name}
+                      </p>
+                      {rc.shared_directors && rc.shared_directors.length > 0 && (
+                        <div className="pt-2 flex flex-wrap gap-1.5 items-center">
+                          <span className="text-[10px] text-ink-400 font-mono uppercase mr-1">Shared Directors:</span>
+                          {rc.shared_directors.map((d) => (
+                            <span
+                              key={d.id}
+                              className="inline-flex rounded-sm bg-white/80 border border-ink-100 px-1.5 py-0.5 text-[10px] font-body text-ink-700"
+                            >
+                              {d.full_name} ({d.nic_passport || 'No ID'})
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {rc.status && (
+                        <p className="text-xs text-ink-500 mt-1 font-body">
+                          <strong>Status:</strong> {rc.status}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2 shrink-0">
+                      <button
+                        type="button"
+                        className="btn-ghost !text-danger hover:!bg-danger-muted/30 text-xs px-2.5 py-1 font-semibold border border-danger/20 hover:border-danger rounded"
+                      >
+                        Blacklist
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost !text-gold-dark hover:!bg-gold/10 text-xs px-2.5 py-1 font-semibold border border-gold/30 hover:border-gold rounded"
+                      >
+                        Whitelist
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost !text-ink-500 hover:!bg-ink-50 text-xs px-2.5 py-1 font-semibold border border-ink-200 hover:border-ink-300 rounded"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

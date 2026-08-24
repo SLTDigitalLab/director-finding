@@ -11,8 +11,9 @@ import {
   Sparkles,
   LayoutPanelLeft,
   ShieldAlert,
+  Bell,
 } from 'lucide-react'
-import { extractPdf, saveExtraction } from '../api/client'
+import { extractPdf, saveExtraction, validateForm20 } from '../api/client'
 
 function BlacklistBanner({ directorCount, companyBlacklisted, companyReason }) {
   if (!directorCount && !companyBlacklisted) return null
@@ -71,6 +72,8 @@ export default function UploadZone({ onSuccess }) {
   const [saveResult, setSaveResult] = useState(null)
   const [error, setError] = useState('')
   const [editable, setEditable] = useState(null)
+  const [validationResult, setValidationResult] = useState(null)
+  const [validating, setValidating] = useState(false)
 
   const onDrop = useCallback((accepted) => {
     if (accepted.length === 0) return
@@ -105,10 +108,32 @@ export default function UploadZone({ onSuccess }) {
     setProgress(0)
     setError('')
     setSaveResult(null)
+    setValidationResult(null)
     try {
       const res = await extractPdf(file, setProgress)
       setExtractResponse(res.data)
       setEditable(structuredClone(res.data.extraction))
+      
+      // Call Form 20 validation after extraction
+      const preview = res.data.preview
+      if (preview && preview.directors && preview.directors.length > 0) {
+        setValidating(true)
+        try {
+          const validationPayload = {
+            company_name: preview.company_name,
+            directors: preview.directors.map(d => ({
+              nic_passport: d.nic_passport,
+              full_name: d.full_name,
+            }))
+          }
+          const valRes = await validateForm20(validationPayload)
+          setValidationResult(valRes.data)
+        } catch (valErr) {
+          console.error('Validation failed:', valErr)
+        } finally {
+          setValidating(false)
+        }
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'Extraction failed. Please try again.')
     } finally {
@@ -320,6 +345,29 @@ export default function UploadZone({ onSuccess }) {
                     companyBlacklisted={preview.company_is_blacklisted}
                     companyReason={preview.company_blacklist_reason}
                   />
+                  {validationResult && validationResult.warning_count > 0 && (
+                    <div
+                      className="flex items-start gap-3 rounded-sm border border-gold/30 bg-gold/8 px-4 py-3 text-gold-dark"
+                      role="alert"
+                    >
+                      <Bell className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div className="text-sm leading-relaxed font-body space-y-1">
+                        <p>
+                          <strong>Form 20 Validation:</strong> {validationResult.message}
+                        </p>
+                        {validationResult.blacklisted_directors.length > 0 && (
+                          <ul className="mt-1 space-y-1">
+                            {validationResult.blacklisted_directors.map((bd, i) => (
+                              <li key={i} className="text-xs">
+                                <strong>{bd.full_name}</strong> ({bd.nic_passport}) — {bd.blacklist_reason} (Company: {bd.blacklist_company_name})
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        <p className="text-xs opacity-90">Proceed with caution — review blacklist matches before saving.</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div
