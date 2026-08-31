@@ -6,6 +6,9 @@ import {
   unblacklistDirector,
   unblacklistCompany,
   getRelatedCompanies,
+  blacklistRelatedCompany,
+  whitelistRelatedCompany,
+  dismissRelatedCompany,
 } from '../api/client'
 
 export default function BlacklistPanel() {
@@ -58,6 +61,37 @@ export default function BlacklistPanel() {
     await loadData()
     await loadRelatedCompanies()
     setRefreshing(false)
+  }
+
+  const handleBlacklistRelated = async (rc) => {
+    if (!confirm(`Blacklist "${rc.company_name}"?\n\nThis will blacklist the company and all its directors.`)) return
+    try {
+      await blacklistRelatedCompany(rc.id)
+      await loadData()
+      await loadRelatedCompanies()
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Could not blacklist related company.')
+    }
+  }
+
+  const handleWhitelistRelated = async (rc) => {
+    if (!confirm(`Whitelist "${rc.company_name}"?`)) return
+    try {
+      await whitelistRelatedCompany(rc.id)
+      await loadRelatedCompanies()
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Could not whitelist related company.')
+    }
+  }
+
+  const handleDismissRelated = async (rc) => {
+    if (!confirm(`Dismiss "${rc.company_name}" from related companies?`)) return
+    try {
+      await dismissRelatedCompany(rc.id)
+      await loadRelatedCompanies()
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Could not dismiss related company.')
+    }
   }
 
   const handleUnblacklistDirector = async (id, name) => {
@@ -314,18 +348,21 @@ export default function BlacklistPanel() {
                     <div className="flex flex-wrap gap-2 shrink-0">
                       <button
                         type="button"
+                        onClick={() => handleBlacklistRelated(rc)}
                         className="btn-ghost !text-danger hover:!bg-danger-muted/30 text-xs px-2.5 py-1 font-semibold border border-danger/20 hover:border-danger rounded"
                       >
                         Blacklist
                       </button>
                       <button
                         type="button"
+                        onClick={() => handleWhitelistRelated(rc)}
                         className="btn-ghost !text-gold-dark hover:!bg-gold/10 text-xs px-2.5 py-1 font-semibold border border-gold/30 hover:border-gold rounded"
                       >
                         Whitelist
                       </button>
                       <button
                         type="button"
+                        onClick={() => handleDismissRelated(rc)}
                         className="btn-ghost !text-ink-500 hover:!bg-ink-50 text-xs px-2.5 py-1 font-semibold border border-ink-200 hover:border-ink-300 rounded"
                       >
                         Dismiss

@@ -72,6 +72,7 @@ class Company(CompanyBase):
     is_whitelisted: bool = False
     whitelist_reason: Optional[str] = None
     whitelist_notes: Optional[str] = None
+    is_related: bool = False
     model_config = {"from_attributes": True}
 
 

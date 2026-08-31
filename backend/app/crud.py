@@ -273,12 +273,19 @@ def get_all_companies_with_directors(db: Session):
     bl_companies = {
         bc.name.strip().upper(): bc for bc in db.query(models.BlacklistedCompany).all()
     }
+    related_names = {
+        rc.company_name.strip().upper()
+        for rc in db.query(models.RelatedCompany)
+        .filter(models.RelatedCompany.status == "highlighted")
+        .all()
+    }
     for c in companies:
         bc = bl_companies.get(c.name.strip().upper())
         c.is_blacklisted = bc is not None
         c.blacklist_reason = bc.reason if bc else None
         c.blacklist_notes = bc.notes if bc else None
         c.is_explicit = bc.is_explicit if bc else False
+        c.is_related = c.name.strip().upper() in related_names
     return companies
 
 
@@ -419,15 +426,6 @@ def _apply_blacklist_fields(db: Session, director: models.Director, data: dict) 
             )
         director.blacklist_company_name = company_key
         db.flush()
-
-        # BFS cascade: blacklist all reachable companies and co-directors in the network
-        _cascade_blacklist_network(
-            db,
-            reason=director.blacklist_reason,
-            notes=director.blacklist_notes,
-            seed_director_ids={director.id},
-            seed_company_names=set(),
-        )
     elif "is_blacklisted" in data and not director.is_blacklisted:
         # Mirror the guard from unblacklist_director: refuse to clear an
         # auto-blacklisted director while its trigger company is still blacklisted.
@@ -514,23 +512,6 @@ def create_director(db: Session, data: dict) -> models.Director:
         data["blacklist_company_name"] = company.name
     if data.get("is_blacklisted"):
         _apply_blacklist_fields(db, director, data)
-    elif existing_director and director.is_blacklisted:
-        _cascade_blacklist_network(
-            db,
-            reason=director.blacklist_reason,
-            notes=director.blacklist_notes,
-            seed_director_ids={director.id},
-            seed_company_names=set(),
-        )
-    elif find_blacklisted_company_by_name(db, company.name):
-        bc = find_blacklisted_company_by_name(db, company.name)
-        _cascade_blacklist_network(
-            db,
-            reason=bc.reason if bc else None,
-            notes=bc.notes if bc else None,
-            seed_director_ids=set(),
-            seed_company_names={normalize_company_name(company.name)},
-        )
     db.commit()
     db.refresh(director)
     return get_director_with_companies(db, director.id)
@@ -1144,7 +1125,7 @@ def blacklist_related_company(
     if company:
         # Call blacklist_company which will create new RelatedCompany entries
         blacklist_company(
-            db, company.id, rc.shared_director_ids, "Blacklisted from related companies"
+            db, company.id, "Blacklisted from related companies", None
         )
 
     # Mark this related company as dismissed (since it's now blacklisted)
