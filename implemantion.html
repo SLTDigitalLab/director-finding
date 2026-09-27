@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Implementation Plan&colon; Company-First Blacklist with Highlight-Only Related Companies</title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+            
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+        
+        </head>
+        <body class="vscode-body vscode-light">
+            <span id="markdown-mermaid" aria-hidden="true" data-config="{&quot;darkModeTheme&quot;:&quot;vscode&quot;,&quot;lightModeTheme&quot;:&quot;vscode&quot;,&quot;maxTextSize&quot;:50000,&quot;clickDrag&quot;:&quot;alt&quot;,&quot;showControls&quot;:&quot;onHoverOrFocus&quot;,&quot;resizable&quot;:true,&quot;maxHeight&quot;:&quot;&quot;}"></span>
+				<h1 id="implementation-plan-company-first-blacklist-with-highlight-only-related-companies">Implementation Plan: Company-First Blacklist with Highlight-Only Related Companies</h1>
+<h2 id="core-rule">Core Rule</h2>
+<p><strong>Blacklist company → its directors are blacklisted → related companies are highlighted only → user decides Blacklist / Whitelist / Dismiss</strong></p>
+<hr>
+<h2 id="1-database-schema-changes">1. Database Schema Changes</h2>
+<h3 id="company-model-add-whitelist-flag-only"><code>Company</code> model (add whitelist flag only)</h3>
+<pre><code class="language-python">is_whitelisted = Column(Boolean, default=<span class="hljs-literal">False</span>, index=<span class="hljs-literal">True</span>, nullable=<span class="hljs-literal">False</span>)
+whitelist_reason = Column(String, nullable=<span class="hljs-literal">True</span>)
+whitelist_notes = Column(String, nullable=<span class="hljs-literal">True</span>)
+</code></pre>
+<h3 id="director-model"><code>Director</code> model</h3>
+<p><strong>NO CHANGES</strong> - remove all whitelist fields from Director</p>
+<h3 id="new-table-relatedcompany">New table <code>RelatedCompany</code></h3>
+<pre><code class="language-python"><span class="hljs-keyword">class</span> <span class="hljs-title class_">RelatedCompany</span>(<span class="hljs-title class_ inherited__">Base</span>):
+    __tablename__ = <span class="hljs-string">&quot;related_companies&quot;</span>
+    <span class="hljs-built_in">id</span> = Column(Integer, primary_key=<span class="hljs-literal">True</span>, index=<span class="hljs-literal">True</span>)
+    company_name = Column(String, index=<span class="hljs-literal">True</span>, nullable=<span class="hljs-literal">False</span>)
+    source_company_name = Column(String, index=<span class="hljs-literal">True</span>, nullable=<span class="hljs-literal">False</span>)
+    shared_director_ids = Column(ARRAY(Integer), nullable=<span class="hljs-literal">False</span>)
+    status = Column(String, default=<span class="hljs-string">&quot;highlighted&quot;</span>)  <span class="hljs-comment"># highlighted, whitelisted, dismissed</span>
+    created_at = Column(DateTime, default=func.now(), nullable=<span class="hljs-literal">False</span>)
+    
+    __table_args__ = (
+        UniqueConstraint(<span class="hljs-string">&#x27;source_company_name&#x27;</span>, <span class="hljs-string">&#x27;company_name&#x27;</span>, name=<span class="hljs-string">&#x27;uq_source_related&#x27;</span>),
+    )
+</code></pre>
+<hr>
+<h2 id="2-crud-layer-backendappcrudpy">2. CRUD Layer (<code>backend/app/crud.py</code>)</h2>
+<h3 id="core-functions">Core Functions</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>blacklist_company(db, company_id, reason, notes)</code></td>
+<td>Explicit blacklist company → blacklist its directors → find related companies (excluding whitelisted) → create <code>RelatedCompany</code> rows (status=highlighted)</td>
+</tr>
+<tr>
+<td><code>get_related_companies(db)</code></td>
+<td>Fetch all <code>RelatedCompany</code> with status=highlighted + company + shared directors</td>
+</tr>
+<tr>
+<td><code>whitelist_company(db, company_id, reason, notes)</code></td>
+<td>Mark company whitelisted; update related companies status=whitelisted (<strong>does NOT modify director blacklist status</strong>)</td>
+</tr>
+<tr>
+<td><code>blacklist_related_company(db, related_company_id)</code></td>
+<td><strong>Calls <code>blacklist_company()</code></strong> on the related company → set RelatedCompany status=dismissed</td>
+</tr>
+<tr>
+<td><code>dismiss_related_company(db, related_company_id)</code></td>
+<td>Set status=dismissed</td>
+</tr>
+<tr>
+<td><code>validate_form20_directors(db, directors_list)</code></td>
+<td>Check each director NIC against blacklist; return warnings only</td>
+</tr>
+</tbody>
+</table>
+<h3 id="modifiedremoved-functions">Modified/Removed Functions</h3>
+<ul>
+<li><strong>REMOVE</strong>: <code>_cascade_blacklist_network()</code></li>
+<li><strong>REMOVE</strong>: <code>_sweep_blacklist_network()</code></li>
+<li><strong>MODIFY</strong>: <code>ensure_blacklisted_company()</code> - <strong>remove whitelist check</strong>; explicit manual blacklisting always allowed</li>
+<li><strong>MODIFY</strong>: <code>link_director_to_company()</code> - check if company is blacklisted (for director blacklist), <strong>ignore whitelist</strong></li>
+<li><strong>KEEP</strong>: <code>blacklist_auto</code> field for backward compatibility only</li>
+</ul>
+<hr>
+<h2 id="3-pydantic-schemas-backendappschemaspy">3. Pydantic Schemas (<code>backend/app/schemas.py</code>)</h2>
+<pre><code class="language-python"><span class="hljs-keyword">class</span> <span class="hljs-title class_">RelatedCompany</span>(<span class="hljs-title class_ inherited__">BaseModel</span>):
+    <span class="hljs-built_in">id</span>: <span class="hljs-built_in">int</span>
+    company_name: <span class="hljs-built_in">str</span>
+    source_company_name: <span class="hljs-built_in">str</span>
+    shared_directors: <span class="hljs-built_in">list</span>[Director]
+    status: <span class="hljs-built_in">str</span>  <span class="hljs-comment"># highlighted, whitelisted, dismissed</span>
+    created_at: datetime
+    model_config = {<span class="hljs-string">&quot;from_attributes&quot;</span>: <span class="hljs-literal">True</span>}
+
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">Company</span>(<span class="hljs-title class_ inherited__">BaseModel</span>):  <span class="hljs-comment"># extend existing</span>
+    is_whitelisted: <span class="hljs-built_in">bool</span> = <span class="hljs-literal">False</span>
+    whitelist_reason: <span class="hljs-type">Optional</span>[<span class="hljs-built_in">str</span>] = <span class="hljs-literal">None</span>
+    whitelist_notes: <span class="hljs-type">Optional</span>[<span class="hljs-built_in">str</span>] = <span class="hljs-literal">None</span>
+
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">Director</span>(<span class="hljs-title class_ inherited__">BaseModel</span>):  <span class="hljs-comment"># NO whitelist fields</span>
+    <span class="hljs-comment"># existing fields only</span>
+
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">Form20ValidationRequest</span>(<span class="hljs-title class_ inherited__">BaseModel</span>):
+    company_name: <span class="hljs-built_in">str</span>
+    directors: <span class="hljs-built_in">list</span>[DirectorBase]
+
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">Form20ValidationResult</span>(<span class="hljs-title class_ inherited__">BaseModel</span>):
+    company_name: <span class="hljs-built_in">str</span>
+    total_directors: <span class="hljs-built_in">int</span>
+    blacklisted_directors: <span class="hljs-built_in">list</span>[DirectorPreview]
+    warning_count: <span class="hljs-built_in">int</span>
+    message: <span class="hljs-built_in">str</span>
+</code></pre>
+<hr>
+<h2 id="4-api-endpoints-backendappmainpy">4. API Endpoints (<code>backend/app/main.py</code>)</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Endpoint</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PATCH</td>
+<td><code>/api/companies/{id}/blacklist</code></td>
+<td><strong>MODIFIED</strong>: Explicit blacklist → blacklist directors → highlight related (exclude whitelisted)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/blacklist/related-companies</code></td>
+<td>Get all highlighted related companies</td>
+</tr>
+<tr>
+<td>PATCH</td>
+<td><code>/api/companies/{id}/whitelist</code></td>
+<td>Whitelist company; update related companies status=whitelisted</td>
+</tr>
+<tr>
+<td>PATCH</td>
+<td><code>/api/companies/{id}/unwhitelist</code></td>
+<td>Remove whitelist flag (optional)</td>
+</tr>
+<tr>
+<td>PATCH</td>
+<td><code>/api/related-companies/{id}/blacklist</code></td>
+<td><strong>Calls blacklist_company()</strong> on related company; sets RelatedCompany status=dismissed</td>
+</tr>
+<tr>
+<td>PATCH</td>
+<td><code>/api/related-companies/{id}/whitelist</code></td>
+<td>Whitelist the related company; sets status=whitelisted</td>
+</tr>
+<tr>
+<td>PATCH</td>
+<td><code>/api/related-companies/{id}/dismiss</code></td>
+<td>Set status=dismissed</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/validate-form20</code></td>
+<td>Validate Form 20 directors against blacklist (warnings only)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/whitelist/companies</code></td>
+<td>List whitelisted companies</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="5-frontend-changes">5. Frontend Changes</h2>
+<h3 id="a-blacklist-page---related-companies-section">A. Blacklist Page - &quot;Related Companies&quot; Section</h3>
+<p>Polling every 30s via <code>useEffect</code> + <code>setInterval</code></p>
+<pre><code>Blacklist Page:
+├── Blacklisted Companies (existing)
+├── Blacklisted Directors (existing)
+└── ⚠ Related Companies (NEW)
+    ├── Company A — Source: Blacklisted Co X
+    │   ├── Shared Directors: [Dir1, Dir2]  ← THESE are blacklisted
+    │   └── Actions: [Blacklist] [Whitelist] [Dismiss]
+    └── Company B — Source: Blacklisted Co Y
+        ├── Shared Directors: [Dir3]  ← THIS is blacklisted
+        └── Actions: [Blacklist] [Whitelist] [Dismiss]
+</code></pre>
+<h3 id="b-companies-table---status-badges--actions">B. Companies Table - Status Badges &amp; Actions</h3>
+<table>
+<thead>
+<tr>
+<th>Company State</th>
+<th>Badge</th>
+<th>Blacklist Btn</th>
+<th>Whitelist Btn</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Explicit Blacklisted</td>
+<td>🔴 &quot;Blacklisted&quot;</td>
+<td>Disabled</td>
+<td>Enabled</td>
+</tr>
+<tr>
+<td>Whitelisted</td>
+<td>🟢 &quot;Whitelisted&quot;</td>
+<td><strong>Enabled</strong> (override)</td>
+<td>Disabled</td>
+</tr>
+<tr>
+<td>Related (highlighted)</td>
+<td>⚠ &quot;Related to blacklisted&quot;</td>
+<td>Enabled</td>
+<td>Enabled</td>
+</tr>
+<tr>
+<td>Normal</td>
+<td>—</td>
+<td>Enabled</td>
+<td>Enabled</td>
+</tr>
+</tbody>
+</table>
+<h3 id="c-form-20-integration-existing-workflow">C. Form 20 Integration (Existing Workflow)</h3>
+<ul>
+<li><strong>NO new route/page/modal</strong></li>
+<li>In existing <code>UploadZone.jsx</code> / Form 20 extraction flow:
+<ol>
+<li>After directors extracted, call <code>/api/validate-form20</code></li>
+<li>Show warning banner with blacklisted directors highlighted</li>
+<li>Allow existing workflow to continue (&quot;Proceed Anyway&quot; / &quot;Review Blacklist&quot;)</li>
+<li><strong>NO &quot;Whitelist Company&quot; action</strong></li>
+</ol>
+</li>
+</ul>
+<hr>
+<h2 id="6-key-logic-flows">6. Key Logic Flows</h2>
+<h3 id="blacklist-company">Blacklist Company</h3>
+<pre><code>POST /api/companies/{id}/blacklist {reason, notes}
+  1. Create BlacklistedCompany (is_explicit=True)
+  2. For each director in company:
+       director.is_blacklisted = True
+       director.blacklist_company_name = company.name
+       director.blacklist_reason = reason
+       director.blacklist_notes = notes
+  3. Find related companies (excluding whitelisted):
+       SELECT DISTINCT c.* FROM companies c
+       JOIN company_director cd ON c.id = cd.company_id
+       WHERE cd.director_id IN (blacklisted_director_ids)
+       AND c.name != blacklisted_company_name
+       AND c.is_whitelisted = False
+  4. For each related company:
+       UPSERT RelatedCompany(
+         company_name=related.name,
+         source_company_name=blacklisted.name,
+         shared_director_ids=[shared director IDs],
+         status=&quot;highlighted&quot;
+       )
+  5. Return company with related_companies
+</code></pre>
+<h3 id="whitelist-company">Whitelist Company</h3>
+<pre><code>POST /api/companies/{id}/whitelist {reason, notes}
+  1. company.is_whitelisted = True, save reason/notes
+  2. For RelatedCompany rows where company_name == this company:
+       status = &quot;whitelisted&quot;
+  3. Director blacklist status: UNCHANGED
+</code></pre>
+<h3 id="blacklist-related-company">Blacklist Related Company</h3>
+<pre><code>PATCH /api/related-companies/{id}/blacklist
+  1. Get RelatedCompany row → related_company_name
+  2. CALL blacklist_company(related_company_id, reason, notes)
+     // Normal explicit blacklist flow: blacklist company → blacklist directors → highlight ITS related companies
+  3. Update this RelatedCompany status = &quot;dismissed&quot;
+</code></pre>
+<h3 id="form-20-validation-integrated-into-existing-flow">Form 20 Validation (Integrated into Existing Flow)</h3>
+<pre><code>After PDF extraction in existing Form 20 workflow:
+  POST /api/validate-form20 {company_name, directors: [{nic, name, ...}]}
+  For each director NIC:
+    hit = find_blacklisted_by_nic(db, nic)
+  Return {blacklisted_directors: [...], warning_count, message}
+  → Show warning banner in existing UI
+  → Allow user to proceed with save
+</code></pre>
+<hr>
+<h2 id="7-migration-strategy">7. Migration Strategy</h2>
+<ol>
+<li>Add <code>is_whitelisted</code>, <code>whitelist_reason</code>, <code>whitelist_notes</code> to <code>companies</code> table via <code>_ensure_schema()</code></li>
+<li>Create <code>related_companies</code> table with unique constraint via <code>_ensure_schema()</code></li>
+<li>Deploy backend → Deploy frontend</li>
+<li>No data migration needed</li>
+</ol>
+<hr>
+<h2 id="8-phased-implementation">8. Phased Implementation</h2>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Deliverables</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1</strong></td>
+<td>DB schema + <code>blacklist_company</code> (new flow) + <code>get_related_companies</code> + <code>validate_form20</code></td>
+</tr>
+<tr>
+<td><strong>2</strong></td>
+<td>Whitelist company + related company actions (blacklist/whitelist/dismiss)</td>
+</tr>
+<tr>
+<td><strong>3</strong></td>
+<td>Frontend: Blacklist page Related Companies section with polling</td>
+</tr>
+<tr>
+<td><strong>4</strong></td>
+<td>Frontend: Companies table badges + whitelist button</td>
+</tr>
+<tr>
+<td><strong>5</strong></td>
+<td>Frontend: Form 20 validation integration into existing UploadZone workflow</td>
+</tr>
+<tr>
+<td><strong>6</strong></td>
+<td>Integration testing</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="requirements-summary-simple-language">Requirements Summary (Simple Language)</h2>
+<h3 id="what-changed">What Changed</h3>
+<p>The blacklist system now works <strong>company-first</strong> instead of director-first:</p>
+<ol>
+<li><strong>Blacklist a Company</strong> → All its directors become blacklisted automatically</li>
+<li><strong>Find Related Companies</strong> → Other companies sharing those directors get <strong>highlighted only</strong> (not blacklisted)</li>
+<li><strong>User Decides</strong> → For each highlighted company: Blacklist / Whitelist / Dismiss</li>
+<li><strong>Whitelist</strong> → Removes highlight, doesn't touch director blacklist status</li>
+<li><strong>Form 20</strong> → Check directors against blacklist during existing upload, show warnings only</li>
+</ol>
+
+            
+            
+        </body>
+        </html>

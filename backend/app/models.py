@@ -1,12 +1,33 @@
-from sqlalchemy import Boolean, Column, Integer, String, Table, ForeignKey
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Integer,
+    String,
+    Table,
+    ForeignKey,
+    DateTime,
+    func,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import JSONB
 from .database import Base
 
 company_director = Table(
     "company_director",
     Base.metadata,
-    Column("company_id", Integer, ForeignKey("companies.id", ondelete="CASCADE"), primary_key=True),
-    Column("director_id", Integer, ForeignKey("directors.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "company_id",
+        Integer,
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "director_id",
+        Integer,
+        ForeignKey("directors.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
 )
 
 
@@ -18,8 +39,30 @@ class Company(Base):
     company_type = Column(String, nullable=True)
     registered_address = Column(String, nullable=True)
     name_approval_number = Column(String, nullable=True)
+    is_whitelisted = Column(Boolean, default=False, index=True, nullable=False)
+    whitelist_reason = Column(String, nullable=True)
+    whitelist_notes = Column(String, nullable=True)
 
-    directors = relationship("Director", secondary=company_director, back_populates="companies")
+    directors = relationship(
+        "Director", secondary=company_director, back_populates="companies"
+    )
+
+
+class RelatedCompany(Base):
+    __tablename__ = "related_companies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_name = Column(String, index=True, nullable=False)
+    source_company_name = Column(String, index=True, nullable=False)
+    shared_director_ids = Column(JSONB, nullable=False)
+    status = Column(String, default="highlighted", nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_company_name", "company_name", name="uq_source_related"
+        ),
+    )
 
 
 class Director(Base):
@@ -39,7 +82,9 @@ class Director(Base):
     blacklist_notes = Column(String, nullable=True)
     blacklist_auto = Column(Boolean, default=False, nullable=False)
 
-    companies = relationship("Company", secondary=company_director, back_populates="directors")
+    companies = relationship(
+        "Company", secondary=company_director, back_populates="directors"
+    )
 
 
 class BlacklistedCompany(Base):
@@ -50,4 +95,3 @@ class BlacklistedCompany(Base):
     reason = Column(String, nullable=True)
     notes = Column(String, nullable=True)
     is_explicit = Column(Boolean, default=False, nullable=False)
-

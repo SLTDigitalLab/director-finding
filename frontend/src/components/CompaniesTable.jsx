@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Building2, Trash2, ChevronDown, ChevronUp, RefreshCw, Pencil, ShieldAlert, Plus } from 'lucide-react'
+import { Building2, Trash2, ChevronDown, ChevronUp, RefreshCw, Pencil, ShieldAlert, Plus, ShieldCheck } from 'lucide-react'
 import {
   getCompanies,
   createCompany,
@@ -8,6 +8,8 @@ import {
   unlinkDirectorFromCompany,
   blacklistCompany,
   unblacklistCompany,
+  whitelistCompany,
+  unwhitelistCompany,
 } from '../api/client'
 import Modal from './Modal'
 
@@ -31,6 +33,12 @@ export default function CompaniesTable({ refreshKey }) {
   const [blacklistForm, setBlacklistForm] = useState({ reason: '', notes: '' })
   const [blacklistError, setBlacklistError] = useState('')
   const [blacklisting, setBlacklisting] = useState(false)
+
+  // Whitelist state
+  const [whitelistCompanyData, setWhitelistCompanyData] = useState(null)
+  const [whitelistForm, setWhitelistForm] = useState({ reason: '', notes: '' })
+  const [whitelistError, setWhitelistError] = useState('')
+  const [whitelisting, setWhitelisting] = useState(false)
 
   const handleSaveBlacklistCompany = async (e) => {
     e.preventDefault()
@@ -58,6 +66,28 @@ export default function CompaniesTable({ refreshKey }) {
     }
   }
 
+  const handleSaveWhitelistCompany = async (e) => {
+    e.preventDefault()
+    if (!whitelistCompanyData) return
+    const reason = whitelistForm.reason.trim()
+    setWhitelisting(true)
+    setWhitelistError('')
+    try {
+      await whitelistCompany(whitelistCompanyData.id, {
+        reason: reason || null,
+        notes: whitelistForm.notes.trim() || null,
+      })
+      setWhitelistCompanyData(null)
+      setWhitelistForm({ reason: '', notes: '' })
+      await load()
+    } catch (err) {
+      const d = err.response?.data?.detail
+      setWhitelistError(typeof d === 'string' ? d : 'Could not whitelist company.')
+    } finally {
+      setWhitelisting(false)
+    }
+  }
+
   const handleUnblacklistCompany = async (co, e) => {
     if (e) e.stopPropagation()
     if (!confirm(`Unblacklist company "${co.name}"?`)) return
@@ -67,6 +97,13 @@ export default function CompaniesTable({ refreshKey }) {
     } catch (err) {
       alert('Could not unblacklist company.')
     }
+  }
+
+  const openWhitelist = (co, e) => {
+    e.stopPropagation()
+    setWhitelistError('')
+    setWhitelistForm({ reason: '', notes: '' })
+    setWhitelistCompanyData(co)
   }
 
 
@@ -315,6 +352,18 @@ export default function CompaniesTable({ refreshKey }) {
                       Blacklisted
                     </span>
                   )}
+                  {co.is_whitelisted && !co.is_blacklisted && (
+                    <span className="inline-flex items-center gap-1 rounded-sm border border-gold/30 bg-gold/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-gold-dark">
+                      <ShieldCheck className="h-3 w-3" />
+                      Whitelisted
+                    </span>
+                  )}
+                  {!co.is_blacklisted && !co.is_whitelisted && co.is_related && (
+                    <span className="inline-flex items-center gap-1 rounded-sm border border-gold/30 bg-gold/8 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-gold-dark">
+                      <ShieldAlert className="h-3 w-3" />
+                      Related
+                    </span>
+                  )}
                 </div>
                 {co.name_approval_number && (
                   <p className="mt-0.5 font-mono text-xs text-ink-400">#{co.name_approval_number}</p>
@@ -353,6 +402,30 @@ export default function CompaniesTable({ refreshKey }) {
                   title="Blacklist company"
                 >
                   <ShieldAlert className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {!co.is_blacklisted && !co.is_whitelisted && (
+                <button
+                  type="button"
+                  onClick={(e) => openWhitelist(co, e)}
+                  className="btn-icon text-gold-dark hover:text-gold"
+                  title="Whitelist company"
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {co.is_whitelisted && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (!confirm(`Remove whitelist from "${co.name}"?`)) return
+                    unwhitelistCompany(co.id).then(() => load())
+                  }}
+                  className="btn-icon text-ink-400 hover:text-ink-600"
+                  title="Remove whitelist"
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
                 </button>
               )}
               <button
@@ -541,6 +614,63 @@ export default function CompaniesTable({ refreshKey }) {
               )}
             </button>
             <button type="button" onClick={() => setBlacklistCompanyData(null)} disabled={blacklisting} className="btn-ghost">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(whitelistCompanyData)}
+        onClose={() => setWhitelistCompanyData(null)}
+        title={`Whitelist company: ${whitelistCompanyData?.name}`}
+        description="Whitelisted companies will not appear as related to blacklisted companies. Directors remain unaffected."
+        titleId="whitelist-company-title"
+        closeDisabled={whitelisting}
+      >
+        <form onSubmit={handleSaveWhitelistCompany} className="space-y-4 px-5 py-5">
+          {whitelistError && (
+            <p className="rounded-sm border border-danger/30 bg-danger-muted px-3 py-2 text-sm text-danger" role="alert">
+              {whitelistError}
+            </p>
+          )}
+
+          <div>
+            <label className="label mb-1.5 block" htmlFor="wl-co-reason">
+              Reason
+            </label>
+            <input
+              id="wl-co-reason"
+              className="input-field w-full"
+              value={whitelistForm.reason}
+              onChange={(e) => setWhitelistForm((f) => ({ ...f, reason: e.target.value }))}
+              placeholder="e.g. Verified compliance, false positive"
+            />
+          </div>
+          <div>
+            <label className="label mb-1.5 block" htmlFor="wl-co-notes">
+              Notes
+            </label>
+            <textarea
+              id="wl-co-notes"
+              className="input-field min-h-[88px] w-full resize-y font-body text-sm"
+              value={whitelistForm.notes}
+              onChange={(e) => setWhitelistForm((f) => ({ ...f, notes: e.target.value }))}
+              placeholder="Additional context…"
+            />
+          </div>
+          <div className="flex flex-wrap gap-3 border-t border-ink-100 pt-4">
+            <button type="submit" disabled={whitelisting} className="btn-primary gap-2 bg-gold-dark hover:bg-gold border-gold-dark hover:border-gold text-cream">
+              {whitelisting ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Whitelisting…
+                </>
+              ) : (
+                'Whitelist Company'
+              )}
+            </button>
+            <button type="button" onClick={() => setWhitelistCompanyData(null)} disabled={whitelisting} className="btn-ghost">
               Cancel
             </button>
           </div>
